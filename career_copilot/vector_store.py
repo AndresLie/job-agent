@@ -43,11 +43,23 @@ class JsonVectorStore:
         payload = {"embedding_model": embedder_name, "records": self.records}
         self.path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    def query(self, query: str, embedder: Embedder, top_k: int = 5) -> list[dict]:
+    def query(
+        self,
+        query: str,
+        embedder: Embedder,
+        top_k: int = 5,
+        categories: set[str] | None = None,
+        exclude_categories: set[str] | None = None,
+    ) -> list[dict]:
         query_embedding = embedder.embed(query)
         query_terms = keyword_tokens(query)
         scored = []
         for record in self.records:
+            category = record.get("category", "general")
+            if categories is not None and category not in categories:
+                continue
+            if exclude_categories is not None and category in exclude_categories:
+                continue
             semantic = cosine(query_embedding, record.get("embedding", []))
             lexical = lexical_overlap(query_terms, keyword_tokens(record["text"] + " " + record["filename"]))
             score = 0.8 * semantic + 0.2 * lexical

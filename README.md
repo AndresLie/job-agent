@@ -1,11 +1,12 @@
 # AI Job Copilot
 
-AI Job Copilot is a local, portfolio-ready agentic RAG system for turning
-resume notes, project evidence, and job descriptions into cited job-fit briefs.
+AI Job Copilot is a local, portfolio-ready agentic RAG system for comparing a
+job description against your CV, then mining your projects and experience for
+honest CV improvement recommendations.
 
 It combines three AI engineering patterns:
 
-- RAG over local evidence with citations.
+- RAG over local CV, project, and experience evidence with citations.
 - Durable memory for user preferences and career facts.
 - Deterministic JSON contracts and retrieval evaluation.
 
@@ -29,6 +30,10 @@ python -m career_copilot evaluate
 ```
 
 `--rebuild` resets the demo storage, including vector records and memory.
+
+`brief` deliberately scores the JD against only indexed `resume/` or `cv/`
+documents. Project and experience documents are used afterward as hidden
+evidence for CV rewrites, not as proof that the current CV already matches.
 
 ## Guided Workflow
 
@@ -60,7 +65,9 @@ outputs/demo_brief.json
 ## Optional NVIDIA LLM
 
 `ask` gives local extractive answers when no LLM key is configured or when
-`--no-llm` is passed. To enable NVIDIA-hosted NIM chat:
+`--no-llm` is passed. `brief` also uses NVIDIA, when configured, to add a blunt
+human-readable review of whether your current CV is actually competitive. To
+enable NVIDIA-hosted NIM chat:
 
 ```powershell
 $env:NVIDIA_API_KEY="your_key_here"
@@ -152,6 +159,9 @@ resume/project/experience documents. Safe public examples live under
 - Document ingestion, cleaning, chunking, and citation tracking.
 - Retrieval scoring with semantic hashing plus lexical reranking.
 - Persistent memory with deterministic BM25 retrieval.
+- Separate JD-to-CV scoring from project/experience-based CV recommendations.
+- Brutally honest LLM review when NVIDIA chat is configured, with deterministic
+  fallback when it is not.
 - Structured job-fit output with a validated JSON result contract.
 - Objective retrieval metrics: Recall@k, MRR, and nDCG@k.
 
@@ -178,9 +188,13 @@ object with:
 
 - `job_title`
 - `fit_score`
+- `cv_match`
 - `matched_evidence`
+- `hidden_evidence`
 - `skill_gaps`
 - `recommended_actions`
+- `brutal_assessment`
+- `llm_brutal_review`
 - `citations`
 - `confidence`
 

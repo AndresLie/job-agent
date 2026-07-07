@@ -74,26 +74,32 @@ def has_llm_config() -> bool:
 
 
 def llm_answer(query: str, hits: list[dict], memories: list[str]) -> str | None:
-    api_key = os.getenv("NVIDIA_API_KEY")
-    if not api_key:
-        return None
-
     context = "\n\n".join(
         f"[{index}] {hit.get('category', 'general')}/{hit['filename']} "
         f"chunk {hit['chunk_index']}: {hit['text']}"
         for index, hit in enumerate(hits, start=1)
     )
     memory_text = "\n".join(f"- {item}" for item in memories)
+    return nvidia_chat(
+        system_prompt="Answer only from provided evidence. Cite source markers like [1].",
+        user_prompt=f"Memory:\n{memory_text}\n\nEvidence:\n{context}\n\nQuestion: {query}",
+    )
+
+
+def nvidia_chat(system_prompt: str, user_prompt: str) -> str | None:
+    api_key = os.getenv("NVIDIA_API_KEY")
+    if not api_key:
+        return None
     payload = {
         "model": os.getenv("NVIDIA_MODEL", NVIDIA_DEFAULT_MODEL),
         "messages": [
             {
                 "role": "system",
-                "content": "Answer only from provided evidence. Cite source markers like [1].",
+                "content": system_prompt,
             },
             {
                 "role": "user",
-                "content": f"Memory:\n{memory_text}\n\nEvidence:\n{context}\n\nQuestion: {query}",
+                "content": user_prompt,
             },
         ],
         "max_tokens": int(os.getenv("NVIDIA_MAX_TOKENS", "2048")),

@@ -65,3 +65,34 @@ def test_generate_brief_from_text_with_web_research(tmp_path):
     assert brief["job_input"]["source_type"] == "text"
     assert brief["job_input"]["company"] == "Example"
     assert brief["web_research"][0]["source_type"] == "exa"
+
+
+def test_brief_scores_resume_only_and_uses_projects_for_cv_recommendations(tmp_path, monkeypatch):
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    embedder = HashingEmbedder()
+    store = JsonVectorStore(tmp_path / "vectors.json")
+    memory = MemoryStore(tmp_path / "memory.json")
+
+    for folder, filename, text in [
+        ("resume", "cv.md", "Python data analysis and SQL reporting."),
+        ("projects", "rag.md", "Built a RAG retrieval evaluation project with citations."),
+        ("jobs", "cached_job.md", "Python RAG retrieval evaluation machine learning agent."),
+    ]:
+        path = tmp_path / folder / filename
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        store.upsert_chunks(chunk_document(path, text, root=tmp_path), embedder)
+
+    brief = generate_brief(
+        None,
+        store,
+        embedder,
+        memory,
+        job_text="# AI Engineer\nPython RAG retrieval evaluation",
+        job_title="AI Engineer",
+    )
+
+    assert brief["fit_score"] < 100
+    assert brief["cv_match"]["matched_terms"] == ["python"]
+    assert any("rag" in item["terms_to_add_to_cv"] for item in brief["hidden_evidence"])
+    assert all(item["category"] != "jobs" for item in brief["citations"])
