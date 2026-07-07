@@ -5,7 +5,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import requests
 
@@ -94,6 +94,10 @@ def resolve_job_input(
 
 
 def fetch_url(url: str) -> dict[str, str]:
+    eightfold_page = fetch_eightfold_job(url)
+    if eightfold_page:
+        return eightfold_page
+
     try:
         from bs4 import BeautifulSoup
     except ImportError as exc:
@@ -114,6 +118,87 @@ def fetch_url(url: str) -> dict[str, str]:
     title = soup.title.get_text(" ", strip=True) if soup.title else ""
     text = soup.get_text("\n", strip=True)
     return {"title": title, "text": text}
+
+
+def fetch_eightfold_job(url: str) -> dict[str, str] | None:
+    api_url = build_eightfold_api_url(url)
+    if not api_url:
+        return None
+
+    try:
+        response = requests.get(
+            api_url,
+            headers={
+                "User-Agent": "ai-job-copilot/0.1",
+                "Accept": "application/json",
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        data = response.json()
+    except (requests.RequestException, ValueError):
+        return None
+
+    if not isinstance(data, dict):
+        return None
+    text = extract_eightfold_job_text(data)
+    if not text:
+        return None
+    title = str(data.get("posting_name") or data.get("name") or "Fetched Job Description")
+    return {"title": title, "text": text}
+
+
+def build_eightfold_api_url(url: str) -> str | None:
+    parsed = urlparse(url)
+    pid = extract_eightfold_pid(parsed)
+    if not pid or not parsed.scheme or not parsed.netloc:
+        return None
+    domain = extract_eightfold_domain(parsed)
+    api_url = f"{parsed.scheme}://{parsed.netloc}/api/apply/v2/jobs/{pid}"
+    if domain:
+        api_url = f"{api_url}?domain={domain}"
+    return api_url
+
+
+def extract_eightfold_pid(parsed_url) -> str | None:
+    query = parse_qs(parsed_url.query)
+    if query.get("pid") and query["pid"][0].isdigit():
+        return query["pid"][0]
+    match = re.search(r"/careers/job/(\d+)", parsed_url.path)
+    if match:
+        return match.group(1)
+    return None
+
+
+def extract_eightfold_domain(parsed_url) -> str:
+    query = parse_qs(parsed_url.query)
+    if query.get("domain"):
+        return query["domain"][0]
+    host = parsed_url.netloc.casefold()
+    host = re.sub(r"^www\.", "", host)
+    labels = [label for label in host.split(".") if label not in {"careers", "jobs", "apply"}]
+    if len(labels) >= 2 and labels[-2:] != ["eightfold", "ai"]:
+        return ".".join(labels[-2:])
+    return host
+
+
+def extract_eightfold_job_text(data: dict) -> str:
+    try:
+        from bs4 import BeautifulSoup
+    except ImportError as exc:
+        raise RuntimeError("Install beautifulsoup4 to use --job-url.") from exc
+
+    parts = [
+        str(data.get("posting_name") or data.get("name") or ""),
+        f"Job ID: {data.get('display_job_id') or data.get('ats_job_id')}" if data.get("display_job_id") or data.get("ats_job_id") else "",
+        f"Department: {data.get('department')}" if data.get("department") else "",
+        f"Location: {data.get('location')}" if data.get("location") else "",
+    ]
+    description = data.get("job_description") or data.get("description") or ""
+    if description:
+        soup = BeautifulSoup(str(description), "html.parser")
+        parts.append(soup.get_text("\n", strip=True))
+    return clean_text("\n".join(part for part in parts if part))
 
 
 def clean_fetched_job_text(text: str) -> str:

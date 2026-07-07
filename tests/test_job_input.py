@@ -3,7 +3,9 @@ from pathlib import Path
 import pytest
 
 from career_copilot.job_input import (
+    build_eightfold_api_url,
     clean_fetched_job_text,
+    extract_eightfold_job_text,
     infer_company_from_url,
     is_low_quality_job_text,
     resolve_job_input,
@@ -51,6 +53,67 @@ def test_infer_company_from_url():
 
 def test_sanitize_filename():
     assert sanitize_filename("AI Engineer / RAG Role!") == "ai-engineer-rag-role"
+
+
+def test_build_eightfold_api_url_from_pid_query():
+    url = "https://careers.micron.com/careers?pid=38535468&domain=micron.com"
+    assert build_eightfold_api_url(url) == "https://careers.micron.com/api/apply/v2/jobs/38535468?domain=micron.com"
+
+
+def test_extract_eightfold_job_text_from_html_description():
+    text = extract_eightfold_job_text(
+        {
+            "posting_name": "SOFTWARE DEVELOPMENT ENGINEER",
+            "display_job_id": "JR84244",
+            "department": "Smart MFG/AI",
+            "location": "Taoyuan City, Taiwan",
+            "job_description": """
+            <p><b>Key Responsibilities:</b></p>
+            <ul><li>Build full-stack manufacturing software.</li></ul>
+            <p><b>Qualifications and Skills:</b></p>
+            <ul><li>Docker, Kubernetes, OpenShift, Git, SQL.</li></ul>
+            """,
+        }
+    )
+    assert "SOFTWARE DEVELOPMENT ENGINEER" in text
+    assert "Job ID: JR84244" in text
+    assert "Docker, Kubernetes, OpenShift" in text
+    assert not is_low_quality_job_text(text)
+
+
+def test_fetch_eightfold_job_url_uses_api(monkeypatch):
+    from career_copilot import job_input
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "posting_name": "SOFTWARE DEVELOPMENT ENGINEER",
+                "display_job_id": "JR84244",
+                "department": "Smart MFG/AI",
+                "location": "Taoyuan City, Taiwan",
+                "job_description": """
+                <p><b>Responsibilities:</b></p>
+                <ul><li>Build internal applications.</li></ul>
+                <p><b>Qualifications and Skills:</b></p>
+                <ul><li>Docker, Kubernetes, OpenShift, Git, SQL.</li></ul>
+                """,
+            }
+
+    calls = []
+
+    def fake_get(url, headers, timeout):
+        calls.append(url)
+        return Response()
+
+    monkeypatch.setattr(job_input.requests, "get", fake_get)
+    result = resolve_job_input(job_url="https://careers.micron.com/careers?pid=38535468&domain=micron.com")
+    assert result.source_type == "url"
+    assert result.title == "SOFTWARE DEVELOPMENT ENGINEER"
+    assert "Docker" in result.text
+    assert calls == ["https://careers.micron.com/api/apply/v2/jobs/38535468?domain=micron.com"]
 
 
 def test_clean_fetched_job_text_removes_embedded_config():

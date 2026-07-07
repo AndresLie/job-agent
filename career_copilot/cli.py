@@ -27,6 +27,16 @@ DEFAULT_JOBS = DEFAULT_DATA / "jobs"
 DEFAULT_COMPANY_RESEARCH = DEFAULT_DATA / "company_research"
 
 
+def configure_output_encoding() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure:
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (OSError, ValueError):
+                pass
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="career-copilot")
     parser.add_argument("--embedder", choices=["hashing", "sentence-transformers"], default="hashing")
@@ -83,6 +93,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    configure_output_encoding()
     load_env_file(PROJECT_ROOT / ".env")
     args = build_parser().parse_args(argv)
     embedder = build_embedder(args.embedder)

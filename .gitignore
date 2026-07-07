@@ -10,6 +10,8 @@ outputs/
 *.tmp
 
 data/raw/jobs/*-url-*.md
+data/raw/jobs/*-text-*.md
+data/raw/jobs/*-stdin-*.md
 data/raw/company_research/*.md
 data/raw/resume/*.pdf
 data/raw/resume/*.PDF
