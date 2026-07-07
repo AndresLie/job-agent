@@ -38,6 +38,11 @@ def build_parser() -> argparse.ArgumentParser:
     remember.add_argument("--summary", required=True)
     remember.add_argument("--tags", default="")
 
+    recall = sub.add_parser("recall", help="Search durable memory without querying RAG documents")
+    recall.add_argument("query")
+    recall.add_argument("--k", type=int, default=5)
+    recall.add_argument("--json", action="store_true", help="Print matching memories as JSON")
+
     brief = sub.add_parser("brief", help="Generate a structured job fit brief")
     brief.add_argument("--job", type=Path, required=True)
     brief.add_argument("--top-k", type=int, default=8)
@@ -74,13 +79,29 @@ def main(argv: list[str] | None = None) -> int:
         print(result["answer"])
         print("\nCitations")
         for index, citation in enumerate(result["citations"], start=1):
-            print(f"- [{index}] {citation['source']} chunk {citation['chunk_index']} score {citation['score']}")
+            print(
+                f"- [{index}] {citation['category']}/{citation['source']} "
+                f"chunk {citation['chunk_index']} score {citation['score']}"
+            )
         return 0
 
     if args.cmd == "remember":
         tags = [tag.strip() for tag in args.tags.split(",") if tag.strip()]
         added = memory.add(args.summary, tags=tags)
         print("Remembered." if added else "Already remembered.")
+        return 0
+
+    if args.cmd == "recall":
+        hits = memory.retrieve(args.query, k=args.k)
+        if args.json:
+            print(json.dumps([item.__dict__ for item in hits], ensure_ascii=False, indent=2))
+            return 0
+        if not hits:
+            print("No matching memories found.")
+            return 0
+        for index, item in enumerate(hits, start=1):
+            tag_text = f" tags={','.join(item.tags)}" if item.tags else ""
+            print(f"[{index}] {item.summary}{tag_text}")
         return 0
 
     if args.cmd == "brief":

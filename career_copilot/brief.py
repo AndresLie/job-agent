@@ -87,6 +87,8 @@ def build_matched_evidence(hits: list[dict], matched: list[str], memories: list[
         evidence.append(
             {
                 "source": hit["filename"],
+                "category": hit.get("category", "general"),
+                "source_path": hit.get("source_path", hit["filename"]),
                 "chunk_index": hit["chunk_index"],
                 "matched_terms": terms,
                 "summary": re.sub(r"\s+", " ", hit["text"]).strip()[:260],

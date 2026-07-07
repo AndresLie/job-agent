@@ -1,4 +1,4 @@
-{"query":"Which evidence shows retrieval augmented generation experience?","relevant_sources":["projects.md","resume.md"]}
-{"query":"What project demonstrates persistent agent memory?","relevant_sources":["projects.md"]}
-{"query":"Which evidence supports evaluation and JSON contracts?","relevant_sources":["projects.md","job_posting.md"]}
-{"query":"What skills match Python retrieval and testing roles?","relevant_sources":["resume.md","job_posting.md"]}
+{"query":"Which evidence shows retrieval augmented generation experience?","relevant_sources":["projects/projects.md","resume/resume.md"]}
+{"query":"What project demonstrates persistent agent memory?","relevant_sources":["projects/projects.md"]}
+{"query":"Which evidence supports evaluation and JSON contracts?","relevant_sources":["projects/projects.md","jobs/job_posting.md","experience/experience.md"]}
+{"query":"What skills match Python retrieval and testing roles?","relevant_sources":["resume/resume.md","jobs/job_posting.md","experience/experience.md"]}

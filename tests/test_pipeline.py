@@ -9,7 +9,9 @@ from career_copilot.vector_store import JsonVectorStore
 
 
 def build_store(tmp_path: Path):
-    source = tmp_path / "projects.md"
+    project_dir = tmp_path / "projects"
+    project_dir.mkdir()
+    source = project_dir / "projects.md"
     source.write_text(
         "RAG project used retrieval augmented generation and citations.\n\n"
         "Memory project used BM25 to recall durable preferences.",

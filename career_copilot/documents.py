@@ -12,6 +12,7 @@ SUPPORTED_EXTENSIONS = {".md", ".markdown", ".txt", ".pdf"}
 class Chunk:
     id: str
     source_path: str
+    category: str
     filename: str
     chunk_index: int
     text: str
@@ -100,11 +101,13 @@ def chunk_document(
         if value:
             p_start, p_end = paragraph_range(spans, cursor, end)
             relpath = path.resolve().relative_to(root.resolve()).as_posix()
+            category = infer_category(relpath)
             index = len(chunks)
             chunks.append(
                 Chunk(
                     id=f"{relpath}:{index}",
                     source_path=relpath,
+                    category=category,
                     filename=path.name,
                     chunk_index=index,
                     text=value,
@@ -116,6 +119,19 @@ def chunk_document(
             break
         cursor = max(end - overlap, cursor + step)
     return chunks
+
+
+def infer_category(relpath: str) -> str:
+    first = relpath.split("/", 1)[0].casefold()
+    if first in {"projects", "project"}:
+        return "projects"
+    if first in {"experience", "experiences", "work"}:
+        return "experience"
+    if first in {"resume", "cv", "resumes"}:
+        return "resume"
+    if first in {"jobs", "job", "job_postings"}:
+        return "jobs"
+    return "general"
 
 
 def find_chunk_end(text: str, start: int, tentative_end: int) -> int:

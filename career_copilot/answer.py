@@ -38,6 +38,8 @@ def build_citations(hits: list[dict]) -> list[dict]:
     return [
         {
             "source": hit["filename"],
+            "category": hit.get("category", "general"),
+            "source_path": hit.get("source_path", hit["filename"]),
             "chunk_index": hit["chunk_index"],
             "paragraphs": [hit["paragraph_start"], hit["paragraph_end"]],
             "score": round(hit["score"], 4),
@@ -53,7 +55,8 @@ def extractive_answer(query: str, hits: list[dict], memories: list[str]) -> str:
         lines.extend(f"- {memory}" for memory in memories)
     for index, hit in enumerate(hits, start=1):
         text = " ".join(hit["text"].split())
-        lines.append(f"- [{index}] {text[:280]} ({hit['filename']}, chunk {hit['chunk_index']})")
+        category = hit.get("category", "general")
+        lines.append(f"- [{index}] {text[:280]} ({category}/{hit['filename']}, chunk {hit['chunk_index']})")
     if not hits:
         lines.append("- No indexed evidence was found. Run ingest first.")
     return "\n".join(lines)
