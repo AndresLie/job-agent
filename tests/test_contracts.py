@@ -37,6 +37,7 @@ def test_validate_brief_accepts_valid_payload():
         "recommended_actions": [],
         "citations": [],
         "confidence": 0.8,
+        "diagnostics": {},
     }
     assert validate_brief(payload) == (True, "")
 

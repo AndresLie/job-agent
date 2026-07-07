@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
+import json
 import re
+import socket
 import sys
 from dataclasses import dataclass
+from html import unescape
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -20,6 +24,7 @@ class JobInput:
     company: str
     url: str | None = None
     cached_path: str | None = None
+    extraction_method: str = "direct"
 
 
 def resolve_job_input(
@@ -90,13 +95,21 @@ def resolve_job_input(
         company=inferred_company,
         url=job_url,
         cached_path=cached_path,
+        extraction_method=page.get("method", "html"),
     )
 
 
 def fetch_url(url: str) -> dict[str, str]:
+    validate_fetch_url(url)
     eightfold_page = fetch_eightfold_job(url)
     if eightfold_page:
         return eightfold_page
+    greenhouse_page = fetch_greenhouse_job(url)
+    if greenhouse_page:
+        return greenhouse_page
+    lever_page = fetch_lever_job(url)
+    if lever_page:
+        return lever_page
 
     try:
         from bs4 import BeautifulSoup
@@ -113,17 +126,38 @@ def fetch_url(url: str) -> dict[str, str]:
     except requests.RequestException as exc:
         raise RuntimeError(f"Could not fetch job URL: {exc}") from exc
     soup = BeautifulSoup(response.text, "html.parser")
+    json_ld_page = extract_json_ld_job(soup)
+    if json_ld_page:
+        return json_ld_page
     for element in soup(["script", "style", "noscript"]):
         element.decompose()
     title = soup.title.get_text(" ", strip=True) if soup.title else ""
     text = soup.get_text("\n", strip=True)
-    return {"title": title, "text": text}
+    return {"title": title, "text": text, "method": "html"}
+
+
+def validate_fetch_url(url: str) -> None:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("Job URL must be an http or https URL.")
+    host = parsed.hostname or ""
+    if host.casefold() in {"localhost", "localhost.localdomain"} or host.endswith(".local"):
+        raise ValueError("Job URL host is not allowed.")
+    try:
+        addresses = {info[4][0] for info in socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)}
+    except socket.gaierror as exc:
+        raise RuntimeError(f"Could not resolve job URL host: {exc}") from exc
+    for address in addresses:
+        ip = ipaddress.ip_address(address)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
+            raise ValueError("Job URL host resolves to a private or local network address.")
 
 
 def fetch_eightfold_job(url: str) -> dict[str, str] | None:
     api_url = build_eightfold_api_url(url)
     if not api_url:
         return None
+    validate_fetch_url(api_url)
 
     try:
         response = requests.get(
@@ -145,7 +179,7 @@ def fetch_eightfold_job(url: str) -> dict[str, str] | None:
     if not text:
         return None
     title = str(data.get("posting_name") or data.get("name") or "Fetched Job Description")
-    return {"title": title, "text": text}
+    return {"title": title, "text": text, "method": "eightfold_api"}
 
 
 def build_eightfold_api_url(url: str) -> str | None:
@@ -199,6 +233,144 @@ def extract_eightfold_job_text(data: dict) -> str:
         soup = BeautifulSoup(str(description), "html.parser")
         parts.append(soup.get_text("\n", strip=True))
     return clean_text("\n".join(part for part in parts if part))
+
+
+def fetch_greenhouse_job(url: str) -> dict[str, str] | None:
+    parsed = urlparse(url)
+    if not host_matches(parsed.netloc, "greenhouse.io"):
+        return None
+    match = re.search(r"/([^/]+)/jobs/(\d+)", parsed.path)
+    if not match:
+        return None
+    board, job_id = match.groups()
+    api_url = f"https://boards-api.greenhouse.io/v1/boards/{board}/jobs/{job_id}?content=true"
+    validate_fetch_url(api_url)
+    try:
+        response = requests.get(api_url, headers={"User-Agent": "ai-job-copilot/0.1", "Accept": "application/json"}, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+    except (requests.RequestException, ValueError):
+        return None
+    content = data.get("content") or ""
+    title = str(data.get("title") or "Fetched Job Description")
+    location = ""
+    if isinstance(data.get("location"), dict):
+        location = data["location"].get("name") or ""
+    text = html_to_text("\n".join(part for part in [title, location, content] if part))
+    return {"title": title, "text": text, "method": "greenhouse_api"} if text else None
+
+
+def fetch_lever_job(url: str) -> dict[str, str] | None:
+    parsed = urlparse(url)
+    if not host_matches(parsed.netloc, "lever.co"):
+        return None
+    match = re.search(r"/([^/]+)/([^/?#]+)", parsed.path)
+    if not match:
+        return None
+    company, posting_id = match.groups()
+    api_url = f"https://api.lever.co/v0/postings/{company}/{posting_id}"
+    validate_fetch_url(api_url)
+    try:
+        response = requests.get(api_url, headers={"User-Agent": "ai-job-copilot/0.1", "Accept": "application/json"}, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+    except (requests.RequestException, ValueError):
+        return None
+    title = str(data.get("text") or "Fetched Job Description")
+    parts = [title, data.get("descriptionPlain") or html_to_text(str(data.get("description") or ""))]
+    for section in data.get("lists") or []:
+        if not isinstance(section, dict):
+            continue
+        parts.append(str(section.get("text") or ""))
+        for item in section.get("content") or []:
+            parts.append(str(item.get("text") if isinstance(item, dict) else item))
+    text = clean_text("\n".join(part for part in parts if part))
+    return {"title": title, "text": text, "method": "lever_api"} if text else None
+
+
+def extract_json_ld_job(soup) -> dict[str, str] | None:
+    for script in soup.find_all("script", attrs={"type": re.compile("ld\\+json", re.I)}):
+        raw = script.string or script.get_text(" ", strip=True)
+        if not raw:
+            continue
+        for item in iter_json_objects(raw):
+            job = find_job_posting(item)
+            if not job:
+                continue
+            title = str(job.get("title") or job.get("name") or "Fetched Job Description")
+            org = job.get("hiringOrganization") if isinstance(job.get("hiringOrganization"), dict) else {}
+            location = format_job_location(job.get("jobLocation"))
+            parts = [
+                title,
+                str(org.get("name") or ""),
+                location,
+                html_to_text(str(job.get("description") or "")),
+                html_to_text(str(job.get("responsibilities") or "")),
+                html_to_text(str(job.get("qualifications") or "")),
+            ]
+            text = clean_text("\n".join(part for part in parts if part))
+            if text:
+                return {"title": title, "text": text, "method": "json_ld"}
+    return None
+
+
+def iter_json_objects(raw: str):
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        return [data]
+    return []
+
+
+def find_job_posting(item):
+    if not isinstance(item, dict):
+        return None
+    item_type = item.get("@type")
+    types = item_type if isinstance(item_type, list) else [item_type]
+    if any(str(value).casefold() == "jobposting" for value in types):
+        return item
+    graph = item.get("@graph")
+    if isinstance(graph, list):
+        for node in graph:
+            found = find_job_posting(node)
+            if found:
+                return found
+    return None
+
+
+def format_job_location(value) -> str:
+    locations = value if isinstance(value, list) else [value]
+    parts = []
+    for location in locations:
+        if not isinstance(location, dict):
+            continue
+        address = location.get("address")
+        if isinstance(address, dict):
+            parts.append(
+                ", ".join(
+                    str(address.get(key))
+                    for key in ("addressLocality", "addressRegion", "addressCountry")
+                    if address.get(key)
+                )
+            )
+    return "; ".join(part for part in parts if part)
+
+
+def html_to_text(value: str) -> str:
+    try:
+        from bs4 import BeautifulSoup
+    except ImportError as exc:
+        raise RuntimeError("Install beautifulsoup4 to use --job-url.") from exc
+    return clean_text(unescape(BeautifulSoup(value, "html.parser").get_text("\n", strip=True)))
+
+
+def host_matches(host: str, suffix: str) -> bool:
+    normalized = host.casefold().split(":", 1)[0]
+    return normalized == suffix or normalized.endswith(f".{suffix}")
 
 
 def clean_fetched_job_text(text: str) -> str:

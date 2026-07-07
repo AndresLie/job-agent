@@ -39,6 +39,7 @@ def test_generate_brief_has_required_fields(tmp_path):
     brief = generate_brief(job, store, embedder, memory)
     assert brief["job_title"] == "AI Engineer"
     assert brief["matched_evidence"]
+    assert brief["diagnostics"]["llm_status"] in {"not_configured", "configured_but_unavailable", "used"}
 
 
 def test_generate_brief_from_text_with_web_research(tmp_path):

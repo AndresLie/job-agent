@@ -53,3 +53,14 @@ def test_work_impact_in_cv_increases_rubric_score():
     score = score_with_rubric(requirements, depth, resume_hits)
     assert score["fit_score"] >= 75
     assert score["scoring_breakdown"]["quantified_impact"] == 10
+
+
+def test_generic_impact_words_without_metrics_do_not_get_quantified_impact():
+    requirements = analyze_job_requirements("AI Engineer deploys Python RAG retrieval evaluation systems.")
+    resume_hits = [
+        hit("Improved and automated Python RAG retrieval evaluation workflows.", category="resume")
+    ]
+    depth = analyze_evidence_depth(requirements, resume_hits, [])
+    score = score_with_rubric(requirements, depth, resume_hits)
+    assert score["scoring_breakdown"]["quantified_impact"] == 0
+    assert score["fit_score"] < 75

@@ -6,10 +6,12 @@ from career_copilot.job_input import (
     build_eightfold_api_url,
     clean_fetched_job_text,
     extract_eightfold_job_text,
+    fetch_url,
     infer_company_from_url,
     is_low_quality_job_text,
     resolve_job_input,
     sanitize_filename,
+    validate_fetch_url,
 )
 
 
@@ -108,12 +110,90 @@ def test_fetch_eightfold_job_url_uses_api(monkeypatch):
         calls.append(url)
         return Response()
 
+    monkeypatch.setattr(job_input, "validate_fetch_url", lambda url: None)
     monkeypatch.setattr(job_input.requests, "get", fake_get)
     result = resolve_job_input(job_url="https://careers.micron.com/careers?pid=38535468&domain=micron.com")
     assert result.source_type == "url"
     assert result.title == "SOFTWARE DEVELOPMENT ENGINEER"
     assert "Docker" in result.text
     assert calls == ["https://careers.micron.com/api/apply/v2/jobs/38535468?domain=micron.com"]
+
+
+def test_validate_fetch_url_blocks_localhost():
+    with pytest.raises(ValueError, match="not allowed|private"):
+        validate_fetch_url("http://localhost:8000/job")
+
+
+def test_fetch_url_extracts_json_ld_job(monkeypatch):
+    from career_copilot import job_input
+
+    class Response:
+        text = """
+        <html><head><script type="application/ld+json">
+        {
+          "@type": "JobPosting",
+          "title": "Data Scientist",
+          "description": "<p>Responsibilities include SQL, Python, dashboards.</p><p>Qualifications: statistics.</p>",
+          "hiringOrganization": {"name": "Example"}
+        }
+        </script></head><body>Shell</body></html>
+        """
+
+        def raise_for_status(self):
+            return None
+
+    monkeypatch.setattr(job_input, "validate_fetch_url", lambda url: None)
+    monkeypatch.setattr(job_input.requests, "get", lambda url, headers, timeout: Response())
+    page = fetch_url("https://example.com/jobs/1")
+    assert page["method"] == "json_ld"
+    assert page["title"] == "Data Scientist"
+    assert "Python" in page["text"]
+
+
+def test_fetch_url_uses_greenhouse_api(monkeypatch):
+    from career_copilot import job_input
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "title": "ML Engineer",
+                "location": {"name": "Remote"},
+                "content": "<p>Responsibilities</p><p>Deploy Python models with Kubernetes.</p>",
+            }
+
+    calls = []
+    monkeypatch.setattr(job_input, "validate_fetch_url", lambda url: None)
+    monkeypatch.setattr(job_input.requests, "get", lambda url, headers, timeout: calls.append(url) or Response())
+    page = fetch_url("https://boards.greenhouse.io/acme/jobs/12345")
+    assert page["method"] == "greenhouse_api"
+    assert "boards-api.greenhouse.io" in calls[0]
+    assert "Kubernetes" in page["text"]
+
+
+def test_fetch_url_uses_lever_api(monkeypatch):
+    from career_copilot import job_input
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "text": "AI Engineer",
+                "descriptionPlain": "Build RAG systems.",
+                "lists": [{"text": "Requirements", "content": [{"text": "Python and evaluation."}]}],
+            }
+
+    calls = []
+    monkeypatch.setattr(job_input, "validate_fetch_url", lambda url: None)
+    monkeypatch.setattr(job_input.requests, "get", lambda url, headers, timeout: calls.append(url) or Response())
+    page = fetch_url("https://jobs.lever.co/acme/abc123")
+    assert page["method"] == "lever_api"
+    assert "api.lever.co" in calls[0]
+    assert "evaluation" in page["text"]
 
 
 def test_clean_fetched_job_text_removes_embedded_config():

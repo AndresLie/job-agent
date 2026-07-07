@@ -22,6 +22,7 @@ REQUIRED_BRIEF_FIELDS = {
     "recommended_actions",
     "citations",
     "confidence",
+    "diagnostics",
 }
 
 
@@ -66,6 +67,8 @@ def validate_brief(payload: dict[str, Any]) -> tuple[bool, str]:
         return False, "fit_score must be between 0 and 100"
     if not 0 <= float(payload["confidence"]) <= 1:
         return False, "confidence must be between 0 and 1"
+    if not isinstance(payload["diagnostics"], dict):
+        return False, "diagnostics must be an object"
     return True, ""
 
 

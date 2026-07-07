@@ -50,6 +50,21 @@
               <textarea name="job_text" rows="12" placeholder="Paste the JD here">{{ form.job_text }}</textarea>
             </label>
 
+            <label>
+              <span>Memory note</span>
+              <textarea name="memory_note" rows="4" placeholder="Optional: save a career preference or fact">{{ form.memory_note }}</textarea>
+            </label>
+
+            <label>
+              <span>Memory tags</span>
+              <input name="memory_tags" value="{{ form.memory_tags }}" placeholder="preference,career">
+            </label>
+
+            <label>
+              <span>Recall memory</span>
+              <input name="memory_query" value="{{ form.memory_query }}" placeholder="Optional memory search query">
+            </label>
+
             <div class="form-grid">
               <label>
                 <span>Top K</span>
@@ -196,10 +211,40 @@
             </section>
 
             <section class="section-block">
+              <h3>Review Diagnostics</h3>
+              <div class="diagnostics-grid">
+                <span>Job extraction</span>
+                <strong>{{ result.diagnostics.job_extraction_method | default("unknown") }}</strong>
+                <span>Job text chars</span>
+                <strong>{{ result.diagnostics.job_text_chars | default("unknown") }}</strong>
+                <span>Indexed chunks</span>
+                <strong>{{ result.diagnostics.indexed_chunks | default("existing") }}</strong>
+                <span>LLM status</span>
+                <strong>{{ result.diagnostics.llm_status | default("unknown") }}</strong>
+                <span>Exa status</span>
+                <strong>{{ result.diagnostics.web_research_status | default("disabled") }}</strong>
+                <span>Memory hits</span>
+                <strong>{{ result.diagnostics.memory_hits | default(0) }}</strong>
+              </div>
+              {% if result.diagnostics.memory_recall %}
+                <h4>Recalled Memory</h4>
+                <ul class="memory-list">
+                  {% for item in result.diagnostics.memory_recall %}
+                    <li>{{ item.summary }}</li>
+                  {% endfor %}
+                </ul>
+              {% endif %}
+            </section>
+
+            <section class="section-block">
               <h3>Citations</h3>
               <div class="citation-list">
                 {% for item in result.citations %}
-                  <span>{{ item.category }}/{{ item.source }} - chunk {{ item.chunk_index }} - {{ item.score }}</span>
+                  <span>
+                    {{ item.category }}/{{ item.source }} - chunk {{ item.chunk_index }}
+                    {% if item.pages %} - pages {{ item.pages[0] }}{% if item.pages[1] != item.pages[0] %}-{{ item.pages[1] }}{% endif %}{% endif %}
+                    - {{ item.score }}
+                  </span>
                 {% endfor %}
               </div>
             </section>

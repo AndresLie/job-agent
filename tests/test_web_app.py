@@ -59,7 +59,9 @@ def test_web_review_with_pasted_jd_returns_result(tmp_path, monkeypatch):
     assert "Fit score" in response.text
     assert "CV vs JD Review" in response.text
     assert "CV Rewrite Suggestions" in response.text
+    assert "Review Diagnostics" in response.text
     assert (root / "outputs" / "latest_brief.json").exists()
+    assert list((root / "outputs" / "runs").glob("review-*.json"))
 
 
 def test_web_review_rejects_empty_jd(tmp_path, monkeypatch):
@@ -97,3 +99,46 @@ def test_web_review_company_research_disabled_without_key(tmp_path, monkeypatch)
     )
     assert response.status_code == 200
     assert "Data Scientist" in response.text
+
+
+def test_web_review_rejects_rag_folder_outside_project(tmp_path, monkeypatch):
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    root = build_example_root(tmp_path)
+    outside = tmp_path.parent
+    client = TestClient(create_app(project_root=root))
+    response = client.post(
+        "/review",
+        data={
+            "rag_folder": str(outside),
+            "rebuild_index": "true",
+            "company": "Example",
+            "job_text": "# Data Scientist\nPython SQL statistics dashboard evaluation",
+            "job_url": "",
+            "top_k": "8",
+        },
+    )
+    assert response.status_code == 400
+    assert "RAG folder must stay inside the project directory" in response.text
+
+
+def test_web_review_can_save_and_recall_memory(tmp_path, monkeypatch):
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    root = build_example_root(tmp_path)
+    client = TestClient(create_app(project_root=root))
+    response = client.post(
+        "/review",
+        data={
+            "rag_folder": str(root / "examples"),
+            "rebuild_index": "true",
+            "company": "Example",
+            "job_text": "# AI Engineer\nPython SQL RAG retrieval evaluation",
+            "job_url": "",
+            "memory_note": "I prefer backend AI roles with RAG evaluation.",
+            "memory_tags": "preference,career",
+            "memory_query": "backend RAG",
+            "top_k": "8",
+        },
+    )
+    assert response.status_code == 200
+    assert "Memory saved." in response.text
+    assert "I prefer backend AI roles" in response.text

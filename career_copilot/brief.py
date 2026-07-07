@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from .answer import build_citations, nvidia_chat
+from .answer import build_citations, has_llm_config, nvidia_chat
 from .contracts import validate_brief, write_json_contract
 from .documents import clean_text
 from .embeddings import Embedder
@@ -30,6 +30,7 @@ def generate_brief(
     job_source_type: str = "file",
     job_cached_path: str | None = None,
     web_research: list[dict] | None = None,
+    diagnostics: dict | None = None,
 ) -> dict:
     if job_text is None:
         if job_path is None:
@@ -77,6 +78,17 @@ def generate_brief(
         resume_hits=resume_hits,
         supporting_hits=supporting_hits,
     )
+    diagnostics_payload = dict(diagnostics or {})
+    diagnostics_payload.update(
+        {
+            "llm_status": "used" if llm_review else ("configured_but_unavailable" if has_llm_config() else "not_configured"),
+            "memory_hits": len(memories),
+            "memory_summaries": memories[:5],
+            "resume_chunks_considered": len(resume_hits),
+            "supporting_chunks_considered": len(supporting_hits),
+            "credible_cv_terms": rubric_result.get("credible_matched_terms", []),
+        }
+    )
     all_citation_hits = resume_hits + supporting_hits
     payload = {
         "job_title": job_title or infer_title(job_text, job_path),
@@ -119,6 +131,7 @@ def generate_brief(
         "citations": build_citations(all_citation_hits),
         "web_research": web_research or [],
         "confidence": confidence_score(resume_hits, supporting_hits),
+        "diagnostics": diagnostics_payload,
     }
     ok, reason = validate_brief(payload)
     if not ok:

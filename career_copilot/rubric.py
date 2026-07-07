@@ -132,9 +132,11 @@ def score_with_rubric(requirements: dict, depth: dict, resume_hits: list[dict]) 
     responsibilities = requirements.get("responsibilities") or []
     by_term = depth.get("by_term", {})
 
-    required_covered = covered_terms(required, by_term)
-    preferred_covered = covered_terms(preferred, by_term)
-    responsibility_covered = covered_terms(responsibilities, by_term)
+    mentioned_required = covered_terms(required, by_term)
+    mentioned_preferred = covered_terms(preferred, by_term)
+    required_covered = credible_terms(required, by_term)
+    preferred_covered = credible_terms(preferred, by_term)
+    responsibility_covered = credible_terms(responsibilities, by_term)
 
     required_component = 45 * ratio(len(required_covered), len(required))
     responsibility_component = 20 * ratio(len(responsibility_covered), len(responsibilities) or len(required))
@@ -152,7 +154,8 @@ def score_with_rubric(requirements: dict, depth: dict, resume_hits: list[dict]) 
 
     return {
         "fit_score": fit_score,
-        "matched_terms": sorted(required_covered | preferred_covered),
+        "matched_terms": sorted(mentioned_required | mentioned_preferred),
+        "credible_matched_terms": sorted(required_covered | preferred_covered),
         "missing_from_cv": sorted(term for term in set(required) | set(preferred) if cv_depth(term, by_term) == "none"),
         "hidden_terms": sorted(
             term
@@ -171,6 +174,8 @@ def score_with_rubric(requirements: dict, depth: dict, resume_hits: list[dict]) 
             "evidence_depth": round(depth_component, 2),
             "quantified_impact": round(impact_component, 2),
             "preferred_coverage": round(preferred_component, 2),
+            "credible_required_matches": len(required_covered),
+            "mentioned_required_matches": len(mentioned_required),
         },
     }
 
@@ -239,9 +244,7 @@ def classify_depth(text: str, category: str) -> str:
 
 
 def has_quantified_impact(text: str) -> bool:
-    if re.search(r"(\d+%|\$\d+|\d+\s*(users|requests|records|rows|hours|seconds|x)\b)", text):
-        return True
-    return any(word in text for word in {"increased", "reduced", "improved", "saved", "automated", "scaled"})
+    return bool(re.search(r"(\d+%|\$\d+|\d+\s*(users|requests|records|rows|hours|seconds|x|ms)\b)", text))
 
 
 def term_in_text(term: str, text: str) -> bool:
@@ -251,6 +254,14 @@ def term_in_text(term: str, text: str) -> bool:
 
 def covered_terms(terms: Iterable[str], by_term: dict) -> set[str]:
     return {term for term in terms if cv_depth(term, by_term) != "none"}
+
+
+def credible_terms(terms: Iterable[str], by_term: dict) -> set[str]:
+    return {
+        term
+        for term in terms
+        if DEPTH_ORDER.get(cv_depth(term, by_term), 0) >= DEPTH_ORDER["work_or_internship"]
+    }
 
 
 def average_depth(terms: list[str], by_term: dict) -> float:

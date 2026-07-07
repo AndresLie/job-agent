@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -58,6 +60,9 @@ def create_app(project_root: Path | None = None) -> FastAPI:
         job_url: str = Form(""),
         company: str = Form(""),
         research_company_enabled: bool = Form(False),
+        memory_note: str = Form(""),
+        memory_tags: str = Form(""),
+        memory_query: str = Form(""),
         top_k: int = Form(8),
     ) -> HTMLResponse:
         form = {
@@ -67,6 +72,9 @@ def create_app(project_root: Path | None = None) -> FastAPI:
             "job_url": job_url,
             "company": company,
             "research_company_enabled": research_company_enabled,
+            "memory_note": memory_note,
+            "memory_tags": memory_tags,
+            "memory_query": memory_query,
             "top_k": top_k,
         }
         try:
@@ -78,6 +86,9 @@ def create_app(project_root: Path | None = None) -> FastAPI:
                 job_url=job_url,
                 company=company,
                 research_company_enabled=research_company_enabled,
+                memory_note=memory_note,
+                memory_tags=memory_tags,
+                memory_query=memory_query,
                 top_k=top_k,
             )
             app.state.latest_brief = payload
@@ -97,6 +108,9 @@ def run_review(
     job_url: str,
     company: str,
     research_company_enabled: bool,
+    memory_note: str,
+    memory_tags: str,
+    memory_query: str,
     top_k: int,
 ) -> tuple[dict[str, Any], str]:
     data_dir = root / "data" / "raw"
@@ -105,13 +119,27 @@ def run_review(
     memory_path = storage / "memory.json"
     jobs_dir = data_dir / "jobs"
     company_research_dir = data_dir / "company_research"
-    output = root / "outputs" / "latest_brief.json"
+    latest_output = root / "outputs" / "latest_brief.json"
+    run_output = review_run_path(root)
 
     embedder = build_embedder("hashing")
     store = JsonVectorStore(index_path)
     memory = MemoryStore(memory_path)
 
     notices = []
+    diagnostics: dict[str, Any] = {
+        "index_rebuilt": bool(rebuild_index),
+        "indexed_documents": None,
+        "indexed_chunks": None,
+        "job_extraction_method": None,
+        "job_text_chars": None,
+        "web_research_status": "disabled",
+        "web_research_sources": 0,
+        "memory_added": False,
+        "memory_recall": [],
+        "result_path": str(run_output),
+        "latest_path": str(latest_output),
+    }
     if rebuild_index:
         source = resolve_local_path(rag_folder or "data/raw", root)
         if not source.exists():
@@ -123,9 +151,26 @@ def run_review(
         for doc in docs:
             chunks.extend(chunk_document(doc, load_document(doc), root=doc_root))
         store.upsert_chunks(chunks, embedder)
+        diagnostics["indexed_documents"] = len(docs)
+        diagnostics["indexed_chunks"] = len(chunks)
         notices.append(f"Indexed {len(chunks)} chunks from {len(docs)} documents.")
     elif not store.records:
         raise ValueError("No existing index found. Enable rebuild index and choose a RAG folder.")
+    else:
+        diagnostics["indexed_chunks"] = len(store.records)
+
+    memory_note = memory_note.strip()
+    if memory_note:
+        tags = [tag.strip() for tag in memory_tags.split(",") if tag.strip()]
+        diagnostics["memory_added"] = memory.add(memory_note, tags=tags, source="web")
+        notices.append("Memory saved." if diagnostics["memory_added"] else "Memory already existed.")
+
+    memory_query = memory_query.strip()
+    if memory_query:
+        diagnostics["memory_recall"] = [
+            {"summary": item.summary, "tags": item.tags, "created_at": item.created_at}
+            for item in memory.retrieve(memory_query, k=5)
+        ]
 
     job_text = job_text.strip()
     job_url = job_url.strip()
@@ -138,6 +183,8 @@ def run_review(
         cache_dir=jobs_dir,
         cache=True,
     )
+    diagnostics["job_extraction_method"] = job.extraction_method
+    diagnostics["job_text_chars"] = len(job.text)
 
     web_sources = []
     if research_company_enabled:
@@ -150,6 +197,8 @@ def run_review(
             cache_dir=company_research_dir,
             cache=True,
         )
+        diagnostics["web_research_status"] = "used"
+        diagnostics["web_research_sources"] = len(web_sources)
         notices.append(f"Fetched {len(web_sources)} company research sources.")
 
     payload = generate_brief(
@@ -165,9 +214,11 @@ def run_review(
         job_source_type=job.source_type,
         job_cached_path=job.cached_path,
         web_research=web_sources,
+        diagnostics=diagnostics,
     )
-    write_json(output, payload)
-    notices.append(f"Wrote {output}")
+    write_json(run_output, payload)
+    write_json(latest_output, payload)
+    notices.append(f"Wrote {run_output}")
     return payload, " ".join(notices)
 
 
@@ -175,7 +226,27 @@ def resolve_local_path(value: str, root: Path) -> Path:
     path = Path(value).expanduser()
     if not path.is_absolute():
         path = root / path
-    return path.resolve()
+    resolved = path.resolve()
+    if not is_relative_to(resolved, root):
+        raise ValueError("RAG folder must stay inside the project directory.")
+    blocked = {".git", "storage", "outputs", "__pycache__"}
+    rel_parts = {part.casefold() for part in resolved.relative_to(root).parts}
+    if rel_parts & blocked:
+        raise ValueError("RAG folder cannot point at project metadata, storage, or output folders.")
+    return resolved
+
+
+def is_relative_to(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def review_run_path(root: Path) -> Path:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return root / "outputs" / "runs" / f"review-{timestamp}-{uuid.uuid4().hex[:8]}.json"
 
 
 def load_latest(root: Path) -> dict[str, Any] | None:
@@ -186,7 +257,7 @@ def load_latest(root: Path) -> dict[str, Any] | None:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return None
-    if not isinstance(payload, dict) or "cv_jd_review" not in payload:
+    if not isinstance(payload, dict) or "cv_jd_review" not in payload or "diagnostics" not in payload:
         return None
     return payload
 
@@ -208,6 +279,9 @@ def render(
         "job_url": "",
         "company": "",
         "research_company_enabled": False,
+        "memory_note": "",
+        "memory_tags": "",
+        "memory_query": "",
         "top_k": 8,
     }
     if form:

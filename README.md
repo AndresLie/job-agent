@@ -41,7 +41,9 @@ The output also includes an application verdict and grounded CV bullet
 suggestions, so weak evidence can produce a blunt "do not apply yet" result.
 The score is a role-aware rubric, not a hiring probability: it considers
 required skill coverage, responsibility alignment, evidence depth, quantified
-impact, and preferred skills.
+impact, and preferred skills. Simple keyword mentions are shown as matched
+terms, but higher scores require credible CV evidence such as work, deployment,
+production, or measured impact.
 
 ## Guided Workflow
 
@@ -54,8 +56,19 @@ python -m career_copilot serve --host 127.0.0.1 --port 8000
 Open `http://127.0.0.1:8000`, choose a RAG folder, paste a JD or enter a job
 URL, then run the review.
 
-Some job boards render descriptions dynamically. If URL extraction cannot find
-a clean JD, paste the job description text instead of using the URL.
+The web UI is designed for local use. It only accepts RAG folders inside the
+project directory and blocks job URLs that resolve to local/private network
+addresses. Each review writes `outputs/latest_brief.json` plus a timestamped
+copy under `outputs/runs/`.
+
+URL extraction supports plain HTML, JSON-LD `JobPosting` pages, Eightfold,
+Greenhouse, and Lever job links. Some job boards still render descriptions
+dynamically or block automated fetches. If extraction cannot find a clean JD,
+paste the job description text instead of using the URL.
+
+The web form can also save a memory note and recall matching memories during a
+review. The result page includes diagnostics showing extraction method, indexed
+chunk count, LLM status, Exa status, and memory hits.
 
 For day-to-day use, run the wizard:
 
@@ -177,8 +190,10 @@ resume/project/experience documents. Safe public examples live under
 ## What It Demonstrates
 
 - Document ingestion, cleaning, chunking, and citation tracking.
+- PDF page ranges in citations when resumes or experience files are PDFs.
 - Retrieval scoring with semantic hashing plus lexical reranking.
 - Persistent memory with deterministic BM25 retrieval.
+- Web memory controls for saving and recalling career preferences.
 - Separate JD-to-CV scoring from project/experience-based CV recommendations.
 - Role-aware job-fit scoring for data scientist, AI engineer, and ML engineer
   roles.
@@ -187,6 +202,8 @@ resume/project/experience documents. Safe public examples live under
 - Brutally honest LLM review when NVIDIA chat is configured, with deterministic
   fallback when it is not.
 - Structured job-fit output with a validated JSON result contract.
+- Review diagnostics for extraction method, LLM/web status, indexed chunks, and
+  memory influence.
 - Objective retrieval metrics: Recall@k, MRR, and nDCG@k.
 
 ## CLI
@@ -230,6 +247,7 @@ object with:
 - `llm_brutal_review`
 - `citations`
 - `confidence`
+- `diagnostics`
 
 This mirrors production agent workflows where conversational text is not the
 source of truth; a validated artifact is.

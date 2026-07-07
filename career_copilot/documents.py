@@ -18,6 +18,8 @@ class Chunk:
     text: str
     paragraph_start: int
     paragraph_end: int
+    page_start: int | None = None
+    page_end: int | None = None
 
 
 def discover_documents(source: Path) -> list[Path]:
@@ -45,7 +47,10 @@ def load_pdf(path: Path) -> str:
     except ImportError as exc:
         raise RuntimeError("Install pypdf to ingest PDF files.") from exc
     reader = PdfReader(str(path))
-    return "\n".join(page.extract_text() or "" for page in reader.pages)
+    return "\n\n".join(
+        f"[PDF page {index}]\n{page.extract_text() or ''}"
+        for index, page in enumerate(reader.pages, start=1)
+    )
 
 
 def clean_text(text: str) -> str:
@@ -76,6 +81,20 @@ def paragraph_range(
     return (hits[0], hits[-1]) if hits else (1, 1)
 
 
+def page_spans(text: str) -> list[tuple[int, int, int]]:
+    markers = [(match.start(), int(match.group(1))) for match in re.finditer(r"\[PDF page (\d+)\]", text)]
+    spans = []
+    for index, (start, page_number) in enumerate(markers):
+        end = markers[index + 1][0] if index + 1 < len(markers) else len(text)
+        spans.append((start, end, page_number))
+    return spans
+
+
+def page_range(spans: list[tuple[int, int, int]], start: int, end: int) -> tuple[int | None, int | None]:
+    hits = [number for span_start, span_end, number in spans if span_end > start and span_start < end]
+    return (hits[0], hits[-1]) if hits else (None, None)
+
+
 def chunk_document(
     path: Path,
     text: str,
@@ -92,6 +111,7 @@ def chunk_document(
         return []
 
     spans = paragraph_spans(text)
+    pages = page_spans(text)
     chunks: list[Chunk] = []
     cursor = 0
     step = chunk_size - overlap
@@ -100,6 +120,7 @@ def chunk_document(
         value = text[cursor:end].strip()
         if value:
             p_start, p_end = paragraph_range(spans, cursor, end)
+            page_start, page_end = page_range(pages, cursor, end)
             relpath = path.resolve().relative_to(root.resolve()).as_posix()
             category = infer_category(relpath)
             index = len(chunks)
@@ -113,6 +134,8 @@ def chunk_document(
                     text=value,
                     paragraph_start=p_start,
                     paragraph_end=p_end,
+                    page_start=page_start,
+                    page_end=page_end,
                 )
             )
         if end >= len(text):

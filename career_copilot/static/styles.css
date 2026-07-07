@@ -337,9 +337,15 @@ button.is-loading .button-spinner {
 }
 
 .suggestion-list,
-.citation-list {
+.citation-list,
+.memory-list {
   display: grid;
   gap: 10px;
+}
+
+.memory-list {
+  margin: 10px 0 0;
+  padding-left: 18px;
 }
 
 .suggestion {
@@ -355,6 +361,21 @@ button.is-loading .button-spinner {
 .citation-list span {
   color: var(--muted);
   font-size: 13px;
+}
+
+.diagnostics-grid {
+  display: grid;
+  grid-template-columns: minmax(140px, 220px) 1fr;
+  gap: 10px 16px;
+  font-size: 14px;
+}
+
+.diagnostics-grid span {
+  color: var(--muted);
+}
+
+.diagnostics-grid strong {
+  overflow-wrap: anywhere;
 }
 
 .llm-review {
@@ -392,6 +413,7 @@ button.is-loading .button-spinner {
   .workspace,
   .section-grid,
   .review-grid,
+  .diagnostics-grid,
   .verdict-band {
     grid-template-columns: 1fr;
   }

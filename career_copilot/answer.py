@@ -42,8 +42,9 @@ def answer_query(
 
 
 def build_citations(hits: list[dict]) -> list[dict]:
-    return [
-        {
+    citations = []
+    for hit in hits:
+        citation = {
             "source": hit["filename"],
             "category": hit.get("category", "general"),
             "source_path": hit.get("source_path", hit["filename"]),
@@ -51,8 +52,10 @@ def build_citations(hits: list[dict]) -> list[dict]:
             "paragraphs": [hit["paragraph_start"], hit["paragraph_end"]],
             "score": round(hit["score"], 4),
         }
-        for hit in hits
-    ]
+        if hit.get("page_start") is not None:
+            citation["pages"] = [hit["page_start"], hit.get("page_end") or hit["page_start"]]
+        citations.append(citation)
+    return citations
 
 
 def extractive_answer(query: str, hits: list[dict], memories: list[str]) -> str:
