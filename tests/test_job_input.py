@@ -196,6 +196,97 @@ def test_fetch_url_uses_lever_api(monkeypatch):
     assert "evaluation" in page["text"]
 
 
+def test_fetch_url_uses_workday_api(monkeypatch):
+    from career_copilot import job_input
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "jobPostingInfo": {
+                    "title": "Data Scientist",
+                    "location": "Taipei",
+                    "jobDescription": "<p>Responsibilities</p><p>Build Python SQL models.</p>",
+                    "qualifications": "<p>Statistics and dashboards.</p>",
+                }
+            }
+
+    calls = []
+    monkeypatch.setattr(job_input, "validate_fetch_url", lambda url: None)
+    monkeypatch.setattr(job_input.requests, "get", lambda url, headers, timeout: calls.append(url) or Response())
+    page = fetch_url("https://acme.wd1.myworkdayjobs.com/en-US/External/job/Taipei/Data-Scientist_JR1")
+    assert page["method"] == "workday_api"
+    assert "/wday/cxs/acme/External/job/Taipei/Data-Scientist_JR1" in calls[0]
+    assert "Statistics" in page["text"]
+
+
+def test_fetch_url_uses_ashby_api(monkeypatch):
+    from career_copilot import job_input
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "data": {
+                    "jobPosting": {
+                        "title": "AI Engineer",
+                        "locationName": "Remote",
+                        "departmentName": "AI",
+                        "descriptionPlain": "Responsibilities include RAG, LLM, and evaluation.",
+                    }
+                }
+            }
+
+    calls = []
+    monkeypatch.setattr(job_input, "validate_fetch_url", lambda url: None)
+    monkeypatch.setattr(job_input.requests, "post", lambda url, headers, json, timeout: calls.append((url, json)) or Response())
+    page = fetch_url("https://jobs.ashbyhq.com/acme/posting-123")
+    assert page["method"] == "ashby_api"
+    assert "ApiJobPosting" in calls[0][0]
+    assert calls[0][1]["variables"]["organizationHostedJobsPageName"] == "acme"
+    assert "evaluation" in page["text"]
+
+
+def test_fetch_url_uses_smartrecruiters_api(monkeypatch):
+    from career_copilot import job_input
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "name": "ML Engineer",
+                "location": {"city": "Taipei"},
+                "jobAd": {
+                    "sections": {
+                        "jobDescription": "<p>Deploy Python APIs.</p>",
+                        "qualifications": "<p>Docker and Kubernetes.</p>",
+                    }
+                },
+            }
+
+    calls = []
+    monkeypatch.setattr(job_input, "validate_fetch_url", lambda url: None)
+    monkeypatch.setattr(job_input.requests, "get", lambda url, headers, timeout: calls.append(url) or Response())
+    page = fetch_url("https://jobs.smartrecruiters.com/Acme/abc-123")
+    assert page["method"] == "smartrecruiters_api"
+    assert "api.smartrecruiters.com" in calls[0]
+    assert "Kubernetes" in page["text"]
+
+
+def test_linkedin_job_url_has_clear_fallback_message(monkeypatch):
+    from career_copilot import job_input
+
+    monkeypatch.setattr(job_input, "validate_fetch_url", lambda url: None)
+    with pytest.raises(ValueError, match="LinkedIn"):
+        fetch_url("https://www.linkedin.com/jobs/view/123")
+
+
 def test_clean_fetched_job_text_removes_embedded_config():
     raw = """
     Software Engineer

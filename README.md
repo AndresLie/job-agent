@@ -26,8 +26,11 @@ python -m career_copilot remember --summary "I prefer backend AI engineering rol
 python -m career_copilot recall "backend AI roles"
 python -m career_copilot ask "Which projects show RAG, memory, and evaluation experience?" --no-llm
 python -m career_copilot brief --job-file data/raw/jobs/job_posting.md --write-contract
+python -m career_copilot export-cv-rewrite --brief outputs/latest_brief.json --output outputs/cv_rewrite.md
+python -m career_copilot portfolio-report --source data/raw --output outputs/portfolio_report.md
 python -m career_copilot serve
 python -m career_copilot evaluate
+python -m career_copilot evaluate-score
 ```
 
 `--rebuild` resets the demo storage, including vector records and memory.
@@ -62,9 +65,11 @@ addresses. Each review writes `outputs/latest_brief.json` plus a timestamped
 copy under `outputs/runs/`.
 
 URL extraction supports plain HTML, JSON-LD `JobPosting` pages, Eightfold,
-Greenhouse, and Lever job links. Some job boards still render descriptions
-dynamically or block automated fetches. If extraction cannot find a clean JD,
-paste the job description text instead of using the URL.
+Workday, Ashby, SmartRecruiters, Greenhouse, and Lever job links. LinkedIn
+usually blocks automated extraction, so paste the JD text for LinkedIn roles.
+Some job boards still render descriptions dynamically or block automated
+fetches. If extraction cannot find a clean JD, paste the job description text
+instead of using the URL.
 
 The web form can also save a memory note and recall matching memories during a
 review. The result page includes diagnostics showing extraction method, indexed
@@ -205,6 +210,8 @@ resume/project/experience documents. Safe public examples live under
 - Review diagnostics for extraction method, LLM/web status, indexed chunks, and
   memory influence.
 - Objective retrieval metrics: Recall@k, MRR, and nDCG@k.
+- Scoring-quality evaluation cases for checking score bands and verdicts.
+- Markdown CV rewrite exports and portfolio coverage reports.
 
 ## CLI
 
@@ -217,11 +224,21 @@ python -m career_copilot brief --job-file data/raw/jobs/job_posting.md
 python -m career_copilot brief --job-text "Paste the JD here"
 python -m career_copilot brief --job-url "https://company.com/careers/job-123" --research-company
 python -m career_copilot brief --job-text "Paste the JD here" --output outputs/latest_brief.json
+python -m career_copilot export-cv-rewrite --brief outputs/latest_brief.json --output outputs/cv_rewrite.md
+python -m career_copilot portfolio-report --source data/raw --output outputs/portfolio_report.md
 python -m career_copilot serve
 python -m career_copilot wizard
 python -m career_copilot demo
 python -m career_copilot evaluate --k 5
+python -m career_copilot evaluate-score --cases benchmarks/scoring_cases.jsonl
 ```
+
+`evaluate-score` uses labeled cases with expected score bands and verdicts.
+`export-cv-rewrite` turns grounded rewrite suggestions into a Markdown plan
+with source chunks, target terms, confidence, and a safe-to-claim flag.
+`portfolio-report` summarizes project/experience coverage for data scientist,
+AI engineer, and ML engineer role families, then recommends what to document or
+build next.
 
 ## Result Contract
 

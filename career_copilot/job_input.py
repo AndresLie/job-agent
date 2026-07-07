@@ -101,9 +101,20 @@ def resolve_job_input(
 
 def fetch_url(url: str) -> dict[str, str]:
     validate_fetch_url(url)
+    if is_linkedin_job_url(url):
+        raise ValueError("LinkedIn job pages usually block automated extraction. Paste the JD text instead.")
     eightfold_page = fetch_eightfold_job(url)
     if eightfold_page:
         return eightfold_page
+    workday_page = fetch_workday_job(url)
+    if workday_page:
+        return workday_page
+    ashby_page = fetch_ashby_job(url)
+    if ashby_page:
+        return ashby_page
+    smartrecruiters_page = fetch_smartrecruiters_job(url)
+    if smartrecruiters_page:
+        return smartrecruiters_page
     greenhouse_page = fetch_greenhouse_job(url)
     if greenhouse_page:
         return greenhouse_page
@@ -288,6 +299,124 @@ def fetch_lever_job(url: str) -> dict[str, str] | None:
     return {"title": title, "text": text, "method": "lever_api"} if text else None
 
 
+def fetch_workday_job(url: str) -> dict[str, str] | None:
+    parsed = urlparse(url)
+    if "myworkdayjobs.com" not in parsed.netloc:
+        return None
+    api_url = build_workday_api_url(url)
+    if not api_url:
+        return None
+    validate_fetch_url(api_url)
+    try:
+        response = requests.get(api_url, headers={"User-Agent": "ai-job-copilot/0.1", "Accept": "application/json"}, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+    except (requests.RequestException, ValueError):
+        return None
+    info = data.get("jobPostingInfo") if isinstance(data.get("jobPostingInfo"), dict) else data
+    title = str(info.get("title") or info.get("jobPostingTitle") or "Fetched Job Description")
+    parts = [
+        title,
+        str(info.get("location") or ""),
+        str(info.get("jobDescription") or ""),
+        str(info.get("qualifications") or ""),
+        str(info.get("responsibilities") or ""),
+    ]
+    text = html_to_text("\n".join(part for part in parts if part))
+    return {"title": title, "text": text, "method": "workday_api"} if text else None
+
+
+def build_workday_api_url(url: str) -> str | None:
+    parsed = urlparse(url)
+    host = parsed.netloc
+    tenant = host.split(".", 1)[0].split("-")[0]
+    parts = [part for part in parsed.path.strip("/").split("/") if part]
+    if len(parts) < 3:
+        return None
+    if re.fullmatch(r"[a-z]{2}-[A-Z]{2}", parts[0]) and len(parts) >= 4:
+        parts = parts[1:]
+    site = parts[0]
+    if "job" not in parts:
+        return None
+    job_index = parts.index("job")
+    job_path = "/".join(parts[job_index:])
+    return f"{parsed.scheme}://{host}/wday/cxs/{tenant}/{site}/{job_path}"
+
+
+def fetch_ashby_job(url: str) -> dict[str, str] | None:
+    parsed = urlparse(url)
+    if not host_matches(parsed.netloc, "ashbyhq.com"):
+        return None
+    parts = [part for part in parsed.path.strip("/").split("/") if part]
+    if len(parts) < 2:
+        return None
+    organization, posting_id = parts[0], parts[-1]
+    api_url = f"{parsed.scheme}://{parsed.netloc}/api/non-user-graphql?op=ApiJobPosting"
+    validate_fetch_url(api_url)
+    payload = {
+        "operationName": "ApiJobPosting",
+        "variables": {
+            "organizationHostedJobsPageName": organization,
+            "jobPostingId": posting_id,
+        },
+        "query": (
+            "query ApiJobPosting($organizationHostedJobsPageName: String!, $jobPostingId: String!) { "
+            "jobPosting(organizationHostedJobsPageName: $organizationHostedJobsPageName, jobPostingId: $jobPostingId) { "
+            "title descriptionPlain description locationName departmentName } }"
+        ),
+    }
+    try:
+        response = requests.post(api_url, headers={"User-Agent": "ai-job-copilot/0.1", "Accept": "application/json"}, json=payload, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+    except (requests.RequestException, ValueError):
+        return None
+    posting = ((data.get("data") or {}).get("jobPosting") if isinstance(data, dict) else None) or {}
+    if not isinstance(posting, dict):
+        return None
+    title = str(posting.get("title") or "Fetched Job Description")
+    text = clean_text(
+        "\n".join(
+            part
+            for part in [
+                title,
+                str(posting.get("locationName") or ""),
+                str(posting.get("departmentName") or ""),
+                posting.get("descriptionPlain") or html_to_text(str(posting.get("description") or "")),
+            ]
+            if part
+        )
+    )
+    return {"title": title, "text": text, "method": "ashby_api"} if text else None
+
+
+def fetch_smartrecruiters_job(url: str) -> dict[str, str] | None:
+    parsed = urlparse(url)
+    if not host_matches(parsed.netloc, "smartrecruiters.com"):
+        return None
+    parts = [part for part in parsed.path.strip("/").split("/") if part]
+    if len(parts) < 2:
+        return None
+    company, posting_id = parts[0], parts[-1]
+    api_url = f"https://api.smartrecruiters.com/v1/companies/{company}/postings/{posting_id}"
+    validate_fetch_url(api_url)
+    try:
+        response = requests.get(api_url, headers={"User-Agent": "ai-job-copilot/0.1", "Accept": "application/json"}, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+    except (requests.RequestException, ValueError):
+        return None
+    title = str(data.get("name") or "Fetched Job Description")
+    sections = []
+    job_ad = data.get("jobAd") if isinstance(data.get("jobAd"), dict) else {}
+    for section in job_ad.get("sections") or {}:
+        value = job_ad.get("sections", {}).get(section)
+        if value:
+            sections.append(str(value))
+    text = html_to_text("\n".join([title, str(data.get("location", {}).get("city") if isinstance(data.get("location"), dict) else ""), *sections]))
+    return {"title": title, "text": text, "method": "smartrecruiters_api"} if text else None
+
+
 def extract_json_ld_job(soup) -> dict[str, str] | None:
     for script in soup.find_all("script", attrs={"type": re.compile("ld\\+json", re.I)}):
         raw = script.string or script.get_text(" ", strip=True)
@@ -371,6 +500,11 @@ def html_to_text(value: str) -> str:
 def host_matches(host: str, suffix: str) -> bool:
     normalized = host.casefold().split(":", 1)[0]
     return normalized == suffix or normalized.endswith(f".{suffix}")
+
+
+def is_linkedin_job_url(url: str) -> bool:
+    parsed = urlparse(url)
+    return host_matches(parsed.netloc, "linkedin.com") and "/jobs/" in parsed.path
 
 
 def clean_fetched_job_text(text: str) -> str:

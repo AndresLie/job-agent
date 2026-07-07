@@ -8,11 +8,14 @@ from pathlib import Path
 from .answer import answer_query
 from .brief import generate_brief
 from .config import load_env_file
+from .cv_export import export_cv_rewrite
 from .documents import chunk_document, discover_documents, load_document
 from .embeddings import build_embedder
 from .evaluate import evaluate_retrieval
 from .job_input import resolve_job_input
 from .memory import MemoryStore
+from .portfolio import export_portfolio_report
+from .score_eval import evaluate_scoring_cases
 from .vector_store import JsonVectorStore, clear_storage
 from .web_research import research_company
 from .wizard import run_demo, run_wizard, write_json
@@ -82,6 +85,17 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate = sub.add_parser("evaluate", help="Evaluate retrieval quality")
     evaluate.add_argument("--queries", type=Path, default=PROJECT_ROOT / "benchmarks" / "queries.jsonl")
     evaluate.add_argument("--k", type=int, default=5)
+
+    score_eval = sub.add_parser("evaluate-score", help="Evaluate job-fit scoring against labeled cases")
+    score_eval.add_argument("--cases", type=Path, default=PROJECT_ROOT / "benchmarks" / "scoring_cases.jsonl")
+
+    rewrite = sub.add_parser("export-cv-rewrite", help="Export grounded CV rewrite suggestions as Markdown")
+    rewrite.add_argument("--brief", type=Path, default=PROJECT_ROOT / "outputs" / "latest_brief.json")
+    rewrite.add_argument("--output", type=Path, default=PROJECT_ROOT / "outputs" / "cv_rewrite.md")
+
+    portfolio = sub.add_parser("portfolio-report", help="Analyze projects and experience for target role coverage")
+    portfolio.add_argument("--source", type=Path, default=DEFAULT_DATA)
+    portfolio.add_argument("--output", type=Path, default=PROJECT_ROOT / "outputs" / "portfolio_report.md")
 
     sub.add_parser("wizard", help="Run an interactive guided job-copilot workflow")
     sub.add_parser("demo", help="Run a public sample demo using examples/")
@@ -212,6 +226,21 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "evaluate":
         payload = evaluate_retrieval(args.queries, store, embedder, k=args.k)
         print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.cmd == "evaluate-score":
+        payload = evaluate_scoring_cases(args.cases)
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.cmd == "export-cv-rewrite":
+        output = export_cv_rewrite(args.brief, args.output)
+        print(f"Wrote {output}")
+        return 0
+
+    if args.cmd == "portfolio-report":
+        output = export_portfolio_report(args.source, args.output)
+        print(f"Wrote {output}")
         return 0
 
     if args.cmd == "wizard":
