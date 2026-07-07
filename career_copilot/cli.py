@@ -75,6 +75,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("wizard", help="Run an interactive guided job-copilot workflow")
     sub.add_parser("demo", help="Run a public sample demo using examples/")
+    serve = sub.add_parser("serve", help="Run the local web UI")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8000)
+    serve.add_argument("--reload", action="store_true")
     return parser
 
 
@@ -215,6 +219,20 @@ def main(argv: list[str] | None = None) -> int:
             embedder=embedder,
             memory=memory,
             storage=DEFAULT_STORAGE,
+        )
+        return 0
+
+    if args.cmd == "serve":
+        try:
+            import uvicorn
+        except ImportError as exc:
+            raise SystemExit("Install uvicorn and fastapi to use the web UI.") from exc
+        uvicorn.run(
+            "career_copilot.web_app:create_app",
+            host=args.host,
+            port=args.port,
+            factory=True,
+            reload=args.reload,
         )
         return 0
 

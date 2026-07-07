@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AI Job Copilot</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="workspace">
+        <aside class="control-panel">
+          <div class="brand-row">
+            <div>
+              <h1>AI Job Copilot</h1>
+              <p>Local CV review for AI and data roles</p>
+            </div>
+          </div>
+
+          {% if error %}
+            <div class="alert alert-error" data-alert="error">{{ error }}</div>
+          {% endif %}
+          {% if notice %}
+            <div class="alert alert-success">{{ notice }}</div>
+          {% endif %}
+
+          <form method="post" action="/review" class="review-form" data-review-form>
+            <label>
+              <span>RAG folder</span>
+              <input name="rag_folder" value="{{ form.rag_folder }}" required>
+            </label>
+
+            <label class="check-row">
+              <input type="checkbox" name="rebuild_index" value="true" {% if form.rebuild_index %}checked{% endif %}>
+              <span>Rebuild index</span>
+            </label>
+
+            <label>
+              <span>Company</span>
+              <input name="company" value="{{ form.company }}" placeholder="Optional">
+            </label>
+
+            <label>
+              <span>Job URL</span>
+              <input name="job_url" value="{{ form.job_url }}" placeholder="https://company.com/careers/job">
+            </label>
+
+            <label>
+              <span>Job description</span>
+              <textarea name="job_text" rows="12" placeholder="Paste the JD here">{{ form.job_text }}</textarea>
+            </label>
+
+            <div class="form-grid">
+              <label>
+                <span>Top K</span>
+                <input name="top_k" type="number" min="3" max="20" value="{{ form.top_k }}">
+              </label>
+              <label class="check-row check-row-bottom">
+                <input type="checkbox" name="research_company_enabled" value="true" {% if form.research_company_enabled %}checked{% endif %}>
+                <span>Exa research</span>
+              </label>
+            </div>
+
+            <button type="submit" data-submit-button>
+              <span class="button-spinner" aria-hidden="true"></span>
+              <span data-submit-label>Run Review</span>
+            </button>
+            <div class="submit-status" role="status" aria-live="polite" hidden data-submit-status>
+              <span class="progress-spinner" aria-hidden="true"></span>
+              <span>Running review...</span>
+            </div>
+          </form>
+        </aside>
+
+        <section class="results-panel">
+          {% set result = payload or latest %}
+          {% if result %}
+            <header class="result-header">
+              <div>
+                <p class="eyebrow">{{ result.role_family | default("general_ai_data") }}</p>
+                <h2>{{ result.job_title }}</h2>
+              </div>
+              <div class="score-block">
+                <span class="score">{{ result.fit_score }}</span>
+                <span class="score-label">Fit score</span>
+              </div>
+            </header>
+
+            <section class="verdict-band verdict-{{ result.application_verdict.label }}">
+              <div>
+                <p class="eyebrow">Verdict</p>
+                <h3>{{ result.application_verdict.label | replace("_", " ") | title }}</h3>
+              </div>
+              <p>{{ result.application_verdict.reason }}</p>
+              <span class="risk">{{ result.application_verdict.risk_level | title }} risk</span>
+            </section>
+
+            <section class="section-block">
+              <h3>Scoring Breakdown</h3>
+              <div class="breakdown-list">
+                {% for label, value in result.scoring_breakdown.items() %}
+                  <div class="breakdown-item">
+                    <div class="breakdown-top">
+                      <span>{{ label | replace("_", " ") | title }}</span>
+                      <strong>{{ value }}</strong>
+                    </div>
+                    <div class="bar"><span style="width: {{ value }}%;"></span></div>
+                  </div>
+                {% endfor %}
+              </div>
+            </section>
+
+            <section class="section-grid">
+              <div class="section-block">
+                <h3>Weak Evidence</h3>
+                {% if result.weak_evidence %}
+                  <ul class="tag-list">
+                    {% for item in result.weak_evidence %}
+                      <li>{{ item }}</li>
+                    {% endfor %}
+                  </ul>
+                {% else %}
+                  <p class="muted">No weak evidence flagged.</p>
+                {% endif %}
+              </div>
+
+              <div class="section-block">
+                <h3>Skill Gaps</h3>
+                {% if result.skill_gaps %}
+                  <ul class="tag-list">
+                    {% for item in result.skill_gaps %}
+                      <li>{{ item }}</li>
+                    {% endfor %}
+                  </ul>
+                {% else %}
+                  <p class="muted">No missing required skills found.</p>
+                {% endif %}
+              </div>
+            </section>
+
+            <section class="section-block">
+              <h3>CV Rewrite Suggestions</h3>
+              {% if result.cv_rewrite_suggestions %}
+                <div class="suggestion-list">
+                  {% for item in result.cv_rewrite_suggestions %}
+                    <article class="suggestion">
+                      <p>{{ item.bullet }}</p>
+                      <footer>{{ item.source_path }} - chunk {{ item.chunk_index }} - confidence {{ item.confidence }}</footer>
+                    </article>
+                  {% endfor %}
+                </div>
+              {% else %}
+                <p class="muted">No project or experience evidence found for CV rewrites.</p>
+              {% endif %}
+            </section>
+
+            <section class="section-block">
+              <h3>Brutal Assessment</h3>
+              <p>{{ result.brutal_assessment }}</p>
+              {% if result.llm_brutal_review %}
+                <pre class="llm-review">{{ result.llm_brutal_review }}</pre>
+              {% endif %}
+            </section>
+
+            <section class="section-block">
+              <h3>Citations</h3>
+              <div class="citation-list">
+                {% for item in result.citations %}
+                  <span>{{ item.category }}/{{ item.source }} - chunk {{ item.chunk_index }} - {{ item.score }}</span>
+                {% endfor %}
+              </div>
+            </section>
+          {% else %}
+            <div class="empty-state">
+              <h2>No review yet</h2>
+              <p>Run a review to see verdict, score, evidence, and rewrite suggestions.</p>
+            </div>
+          {% endif %}
+        </section>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

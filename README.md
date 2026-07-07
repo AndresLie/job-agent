@@ -26,6 +26,7 @@ python -m career_copilot remember --summary "I prefer backend AI engineering rol
 python -m career_copilot recall "backend AI roles"
 python -m career_copilot ask "Which projects show RAG, memory, and evaluation experience?" --no-llm
 python -m career_copilot brief --job-file data/raw/jobs/job_posting.md --write-contract
+python -m career_copilot serve
 python -m career_copilot evaluate
 ```
 
@@ -41,6 +42,15 @@ required skill coverage, responsibility alignment, evidence depth, quantified
 impact, and preferred skills.
 
 ## Guided Workflow
+
+For the local web UI:
+
+```bash
+python -m career_copilot serve --host 127.0.0.1 --port 8000
+```
+
+Open `http://127.0.0.1:8000`, choose a RAG folder, paste a JD or enter a job
+URL, then run the review.
 
 For day-to-day use, run the wizard:
 
@@ -185,6 +195,7 @@ python -m career_copilot brief --job-file data/raw/jobs/job_posting.md
 python -m career_copilot brief --job-text "Paste the JD here"
 python -m career_copilot brief --job-url "https://company.com/careers/job-123" --research-company
 python -m career_copilot brief --job-text "Paste the JD here" --output outputs/latest_brief.json
+python -m career_copilot serve
 python -m career_copilot wizard
 python -m career_copilot demo
 python -m career_copilot evaluate --k 5
