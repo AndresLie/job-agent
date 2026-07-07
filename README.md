@@ -35,6 +35,8 @@ python -m career_copilot evaluate
 `brief` deliberately scores the JD against only indexed `resume/` or `cv/`
 documents. Project and experience documents are used afterward as hidden
 evidence for CV rewrites, not as proof that the current CV already matches.
+Company research is shown as context, but it does not change the CV-vs-JD
+score.
 The output also includes an application verdict and grounded CV bullet
 suggestions, so weak evidence can produce a blunt "do not apply yet" result.
 The score is a role-aware rubric, not a hiring probability: it considers
@@ -51,6 +53,9 @@ python -m career_copilot serve --host 127.0.0.1 --port 8000
 
 Open `http://127.0.0.1:8000`, choose a RAG folder, paste a JD or enter a job
 URL, then run the review.
+
+Some job boards render descriptions dynamically. If URL extraction cannot find
+a clean JD, paste the job description text instead of using the URL.
 
 For day-to-day use, run the wizard:
 
@@ -213,6 +218,7 @@ object with:
 - `evidence_depth`
 - `scoring_breakdown`
 - `weak_evidence`
+- `cv_jd_review`
 - `cv_match`
 - `matched_evidence`
 - `hidden_evidence`

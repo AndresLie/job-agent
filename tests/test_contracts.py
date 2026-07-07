@@ -16,6 +16,15 @@ def test_validate_brief_accepts_valid_payload():
             "preferred_coverage": 0,
         },
         "weak_evidence": [],
+        "cv_jd_review": {
+            "score": 80,
+            "verdict": "strong_cv_match",
+            "reason": "Strong evidence.",
+            "matched_terms": ["python"],
+            "missing_from_cv": [],
+            "weak_evidence": [],
+            "scoring_breakdown": {},
+        },
         "matched_evidence": [],
         "application_verdict": {
             "label": "strong_match",

@@ -135,15 +135,19 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "brief":
         job_file = args.job_file or args.job
-        job = resolve_job_input(
-            job_file=job_file,
-            job_text=args.job_text,
-            job_url=args.job_url,
-            use_stdin=args.stdin,
-            company=args.company,
-            cache_dir=DEFAULT_JOBS,
-            cache=not args.no_cache,
-        )
+        try:
+            job = resolve_job_input(
+                job_file=job_file,
+                job_text=args.job_text,
+                job_url=args.job_url,
+                use_stdin=args.stdin,
+                company=args.company,
+                cache_dir=DEFAULT_JOBS,
+                cache=not args.no_cache,
+            )
+        except (RuntimeError, ValueError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
         web_sources = []
         if args.research_company:
             company = job.company or args.company

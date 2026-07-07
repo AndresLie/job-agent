@@ -86,6 +86,38 @@
               </div>
             </header>
 
+            <section class="section-block priority-section">
+              <p class="eyebrow">Step 1</p>
+              <h3>CV vs JD Review</h3>
+              <p>{{ result.cv_jd_review.reason }}</p>
+              <div class="review-grid">
+                <div>
+                  <strong>Matched in CV</strong>
+                  {% if result.cv_jd_review.matched_terms %}
+                    <ul class="tag-list">
+                      {% for item in result.cv_jd_review.matched_terms %}
+                        <li>{{ item }}</li>
+                      {% endfor %}
+                    </ul>
+                  {% else %}
+                    <p class="muted">No direct CV matches found.</p>
+                  {% endif %}
+                </div>
+                <div>
+                  <strong>Missing from CV</strong>
+                  {% if result.cv_jd_review.missing_from_cv %}
+                    <ul class="tag-list">
+                      {% for item in result.cv_jd_review.missing_from_cv %}
+                        <li>{{ item }}</li>
+                      {% endfor %}
+                    </ul>
+                  {% else %}
+                    <p class="muted">No missing CV terms found.</p>
+                  {% endif %}
+                </div>
+              </div>
+            </section>
+
             <section class="verdict-band verdict-{{ result.application_verdict.label }}">
               <div>
                 <p class="eyebrow">Verdict</p>
@@ -139,6 +171,7 @@
             </section>
 
             <section class="section-block">
+              <p class="eyebrow">Step 2</p>
               <h3>CV Rewrite Suggestions</h3>
               {% if result.cv_rewrite_suggestions %}
                 <div class="suggestion-list">

@@ -52,8 +52,8 @@ def create_app(project_root: Path | None = None) -> FastAPI:
     @app.post("/review", response_class=HTMLResponse)
     def review(
         request: Request,
-        rag_folder: str = Form("examples"),
-        rebuild_index: bool = Form(False),
+        rag_folder: str = Form("data/raw"),
+        rebuild_index: bool = Form(True),
         job_text: str = Form(""),
         job_url: str = Form(""),
         company: str = Form(""),
@@ -113,7 +113,7 @@ def run_review(
 
     notices = []
     if rebuild_index:
-        source = resolve_local_path(rag_folder or "examples", root)
+        source = resolve_local_path(rag_folder or "data/raw", root)
         if not source.exists():
             raise ValueError(f"RAG folder does not exist: {source}")
         store.reset()
@@ -183,9 +183,12 @@ def load_latest(root: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return None
+    if not isinstance(payload, dict) or "cv_jd_review" not in payload:
+        return None
+    return payload
 
 
 def render(
@@ -199,7 +202,7 @@ def render(
     status_code: int = 200,
 ) -> HTMLResponse:
     default_form = {
-        "rag_folder": str(root / "examples"),
+        "rag_folder": str(root / "data" / "raw"),
         "rebuild_index": True,
         "job_text": "",
         "job_url": "",

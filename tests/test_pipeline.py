@@ -65,6 +65,7 @@ def test_generate_brief_from_text_with_web_research(tmp_path):
     assert brief["job_input"]["source_type"] == "text"
     assert brief["job_input"]["company"] == "Example"
     assert brief["web_research"][0]["source_type"] == "exa"
+    assert brief["cv_jd_review"]["score"] == brief["fit_score"]
 
 
 def test_brief_scores_resume_only_and_uses_projects_for_cv_recommendations(tmp_path, monkeypatch):
@@ -99,6 +100,46 @@ def test_brief_scores_resume_only_and_uses_projects_for_cv_recommendations(tmp_p
     assert brief["application_verdict"]["label"] in {"weak_match", "stretch"}
     assert brief["cv_rewrite_suggestions"]
     assert all("jobs/" not in item["source_path"] for item in brief["cv_rewrite_suggestions"])
+
+
+def test_web_research_does_not_change_cv_jd_score(tmp_path, monkeypatch):
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    embedder = HashingEmbedder()
+    store = JsonVectorStore(tmp_path / "vectors.json")
+    memory = MemoryStore(tmp_path / "memory.json")
+    resume = tmp_path / "resume" / "cv.md"
+    resume.parent.mkdir()
+    resume.write_text("Python SQL analytics.", encoding="utf-8")
+    store.upsert_chunks(chunk_document(resume, resume.read_text(encoding="utf-8"), root=tmp_path), embedder)
+
+    base = generate_brief(
+        None,
+        store,
+        embedder,
+        memory,
+        job_text="# Data Scientist\nPython SQL",
+        job_title="Data Scientist",
+    )
+    with_research = generate_brief(
+        None,
+        store,
+        embedder,
+        memory,
+        job_text="# Data Scientist\nPython SQL",
+        job_title="Data Scientist",
+        web_research=[
+            {
+                "title": "Company AI Platform",
+                "url": "https://example.com",
+                "source_type": "exa",
+                "highlights": ["Docker Kubernetes RAG LLM vector search"],
+                "summary": "The company uses many AI platform technologies.",
+            }
+        ],
+    )
+
+    assert with_research["fit_score"] == base["fit_score"]
+    assert with_research["cv_jd_review"]["matched_terms"] == base["cv_jd_review"]["matched_terms"]
 
 
 def test_brief_verdict_not_competitive_without_resume(tmp_path, monkeypatch):

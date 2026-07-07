@@ -9,6 +9,8 @@ result.json
 outputs/
 *.tmp
 
+data/raw/jobs/*-url-*.md
+data/raw/company_research/*.md
 data/raw/resume/*.pdf
 data/raw/resume/*.PDF
 data/raw/projects/*.md

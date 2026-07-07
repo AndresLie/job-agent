@@ -40,11 +40,12 @@ def generate_brief(
         " ".join([source.get("title", ""), source.get("summary", ""), " ".join(source.get("highlights", []))])
         for source in (web_research or [])
     )
-    comparison_text = clean_text(job_text + "\n\n" + research_text)
-    resume_hits = store.query(comparison_text, embedder, top_k, categories=RESUME_CATEGORIES)
-    supporting_hits = store.query(comparison_text, embedder, top_k, categories=SUPPORTING_CATEGORIES)
-    memories = [item.summary for item in memory.retrieve(comparison_text, k=5)]
-    requirements = analyze_job_requirements(comparison_text)
+    jd_comparison_text = clean_text(job_text)
+    retrieval_text = clean_text(job_text + "\n\n" + research_text)
+    resume_hits = store.query(jd_comparison_text, embedder, top_k, categories=RESUME_CATEGORIES)
+    supporting_hits = store.query(jd_comparison_text, embedder, top_k, categories=SUPPORTING_CATEGORIES)
+    memories = [item.summary for item in memory.retrieve(retrieval_text, k=5)]
+    requirements = analyze_job_requirements(jd_comparison_text)
     evidence_depth = analyze_evidence_depth(requirements, resume_hits, supporting_hits)
     rubric_result = score_with_rubric(requirements, evidence_depth, resume_hits)
     job_terms = set(requirements["required"]) | set(requirements["preferred"])
@@ -91,6 +92,15 @@ def generate_brief(
         "evidence_depth": evidence_depth,
         "scoring_breakdown": rubric_result["scoring_breakdown"],
         "weak_evidence": weak_evidence,
+        "cv_jd_review": {
+            "score": fit_score,
+            "verdict": score_verdict(fit_score),
+            "reason": build_cv_feedback(fit_score, matched, missing_from_cv, resume_hits),
+            "matched_terms": matched,
+            "missing_from_cv": missing_from_cv[:12],
+            "weak_evidence": weak_evidence,
+            "scoring_breakdown": rubric_result["scoring_breakdown"],
+        },
         "cv_match": {
             "score": fit_score,
             "verdict": score_verdict(fit_score),

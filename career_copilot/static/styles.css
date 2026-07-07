@@ -277,6 +277,22 @@ button.is-loading .button-spinner {
   gap: 18px;
 }
 
+.priority-section {
+  border-left: 6px solid var(--accent);
+}
+
+.review-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin-top: 14px;
+}
+
+.review-grid strong {
+  display: block;
+  margin-bottom: 10px;
+}
+
 .breakdown-list {
   display: grid;
   gap: 12px;
@@ -375,6 +391,7 @@ button.is-loading .button-spinner {
 @media (max-width: 900px) {
   .workspace,
   .section-grid,
+  .review-grid,
   .verdict-band {
     grid-template-columns: 1fr;
   }

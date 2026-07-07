@@ -33,6 +33,8 @@ def test_web_index_renders_form(tmp_path, monkeypatch):
     assert response.status_code == 200
     assert "Run Review" in response.text
     assert "Job description" in response.text
+    assert "data/raw" in response.text or "data\\raw" in response.text
+    assert "CV vs JD Review" in response.text or "No review yet" in response.text
     assert "data-review-form" in response.text
     assert "data-submit-status" in response.text
     assert "/static/app.js" in response.text
@@ -55,6 +57,7 @@ def test_web_review_with_pasted_jd_returns_result(tmp_path, monkeypatch):
     )
     assert response.status_code == 200
     assert "Fit score" in response.text
+    assert "CV vs JD Review" in response.text
     assert "CV Rewrite Suggestions" in response.text
     assert (root / "outputs" / "latest_brief.json").exists()
 

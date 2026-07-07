@@ -75,7 +75,12 @@ def resolve_job_input(
 
     assert job_url is not None
     page = fetch_url(job_url)
-    text = clean_text(page["text"])
+    text = clean_fetched_job_text(page["text"])
+    if is_low_quality_job_text(text):
+        raise ValueError(
+            "Could not extract a clean job description from this URL. "
+            "The page may be dynamic or protected; paste the JD text instead."
+        )
     inferred_company = company or infer_company_from_url(job_url)
     cached_path = cache_text(text, cache_dir, inferred_company or "job-url", "url", source_url=job_url) if cache and cache_dir else None
     return JobInput(
@@ -94,18 +99,74 @@ def fetch_url(url: str) -> dict[str, str]:
     except ImportError as exc:
         raise RuntimeError("Install beautifulsoup4 to use --job-url.") from exc
 
-    response = requests.get(
-        url,
-        headers={"User-Agent": "ai-job-copilot/0.1"},
-        timeout=30,
-    )
-    response.raise_for_status()
+    try:
+        response = requests.get(
+            url,
+            headers={"User-Agent": "ai-job-copilot/0.1"},
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        raise RuntimeError(f"Could not fetch job URL: {exc}") from exc
     soup = BeautifulSoup(response.text, "html.parser")
     for element in soup(["script", "style", "noscript"]):
         element.decompose()
     title = soup.title.get_text(" ", strip=True) if soup.title else ""
     text = soup.get_text("\n", strip=True)
     return {"title": title, "text": text}
+
+
+def clean_fetched_job_text(text: str) -> str:
+    lines = []
+    for line in clean_text(text).splitlines():
+        stripped = line.strip()
+        lowered = stripped.casefold()
+        if not stripped:
+            continue
+        if looks_like_embedded_config(stripped, lowered):
+            continue
+        lines.append(stripped)
+    return clean_text("\n".join(lines))
+
+
+def looks_like_embedded_config(stripped: str, lowered: str) -> bool:
+    if stripped.startswith(("{", "[")) and len(stripped) > 200:
+        return True
+    if len(stripped) > 1000 and any(marker in lowered for marker in {"navbar", "themeoptions", "css", "scripts"}):
+        return True
+    return any(
+        marker in lowered
+        for marker in {
+            "themeoptions",
+            "navbardata",
+            "customhtmlnavbardata",
+            "scriptconfig",
+            "notificationkeyratelimit",
+            "platformperformance",
+        }
+    )
+
+
+def is_low_quality_job_text(text: str) -> bool:
+    tokens = re.findall(r"[a-zA-Z]{3,}", text)
+    lowered = text.casefold()
+    job_markers = {
+        "responsibilities",
+        "requirements",
+        "qualifications",
+        "minimum qualifications",
+        "preferred qualifications",
+        "job description",
+        "what you will do",
+        "about the role",
+        "skills",
+    }
+    has_marker = any(marker in lowered for marker in job_markers)
+    if len(tokens) < 10:
+        return True
+    if len(tokens) < 80 and not has_marker:
+        return True
+    return not has_marker
 
 
 def infer_title(text: str, fallback: str) -> str:

@@ -3,7 +3,9 @@ from pathlib import Path
 import pytest
 
 from career_copilot.job_input import (
+    clean_fetched_job_text,
     infer_company_from_url,
+    is_low_quality_job_text,
     resolve_job_input,
     sanitize_filename,
 )
@@ -49,3 +51,42 @@ def test_infer_company_from_url():
 
 def test_sanitize_filename():
     assert sanitize_filename("AI Engineer / RAG Role!") == "ai-engineer-rag-role"
+
+
+def test_clean_fetched_job_text_removes_embedded_config():
+    raw = """
+    Software Engineer
+    {"navbarData": {"customHtmlNavbarData": {"css": ".container{display:flex}"}}}
+    Responsibilities
+    Build Python services with Docker and SQL.
+    Requirements
+    Experience with APIs and deployment.
+    """
+    text = clean_fetched_job_text(raw)
+    assert "navbarData" not in text
+    assert "container" not in text
+    assert "Docker" in text
+    assert not is_low_quality_job_text(text)
+
+
+def test_low_quality_job_text_detects_dynamic_shell():
+    text = clean_fetched_job_text(
+        "SOFTWARE DEVELOPMENT ENGINEER\n"
+        '{"themeOptions": {"navbarData": {"css": ".container{display:flex}"}}}'
+    )
+    assert is_low_quality_job_text(text)
+
+
+def test_resolve_job_url_rejects_dynamic_shell(monkeypatch):
+    from career_copilot import job_input
+
+    monkeypatch.setattr(
+        job_input,
+        "fetch_url",
+        lambda url: {
+            "title": "Dynamic Careers Page",
+            "text": 'SOFTWARE DEVELOPMENT ENGINEER\n{"navbarData": {"css": ".container{display:flex}"}}',
+        },
+    )
+    with pytest.raises(ValueError, match="paste the JD text"):
+        resolve_job_input(job_url="https://careers.example.com/job")
