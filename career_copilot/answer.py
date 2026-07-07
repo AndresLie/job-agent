@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import json
 import os
+
+import requests
 
 from .memory import MemoryStore
 from .vector_store import JsonVectorStore
 from .embeddings import Embedder
+
+
+NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
+NVIDIA_DEFAULT_MODEL = "google/gemma-4-31b-it"
 
 
 def answer_query(
@@ -63,35 +70,58 @@ def extractive_answer(query: str, hits: list[dict], memories: list[str]) -> str:
 
 
 def has_llm_config() -> bool:
-    return bool(os.getenv("LITELLM_API_KEY") or os.getenv("OPENAI_API_KEY"))
+    return bool(os.getenv("NVIDIA_API_KEY"))
 
 
 def llm_answer(query: str, hits: list[dict], memories: list[str]) -> str | None:
-    try:
-        from litellm import completion
-    except ImportError:
+    api_key = os.getenv("NVIDIA_API_KEY")
+    if not api_key:
         return None
+
     context = "\n\n".join(
-        f"[{index}] {hit['filename']} chunk {hit['chunk_index']}: {hit['text']}"
+        f"[{index}] {hit.get('category', 'general')}/{hit['filename']} "
+        f"chunk {hit['chunk_index']}: {hit['text']}"
         for index, hit in enumerate(hits, start=1)
     )
     memory_text = "\n".join(f"- {item}" for item in memories)
+    payload = {
+        "model": os.getenv("NVIDIA_MODEL", NVIDIA_DEFAULT_MODEL),
+        "messages": [
+            {
+                "role": "system",
+                "content": "Answer only from provided evidence. Cite source markers like [1].",
+            },
+            {
+                "role": "user",
+                "content": f"Memory:\n{memory_text}\n\nEvidence:\n{context}\n\nQuestion: {query}",
+            },
+        ],
+        "max_tokens": int(os.getenv("NVIDIA_MAX_TOKENS", "2048")),
+        "temperature": float(os.getenv("NVIDIA_TEMPERATURE", "1.0")),
+        "top_p": float(os.getenv("NVIDIA_TOP_P", "0.95")),
+        "stream": False,
+        "chat_template_kwargs": {"enable_thinking": True},
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    invoke_url = os.getenv("NVIDIA_BASE_URL", NVIDIA_BASE_URL).rstrip("/") + "/chat/completions"
     try:
-        response = completion(
-            model=os.getenv("LITELLM_MODEL", "gpt-4o-mini"),
-            messages=[
-                {
-                    "role": "system",
-                    "content": "Answer only from provided evidence. Cite source markers like [1].",
-                },
-                {
-                    "role": "user",
-                    "content": f"Memory:\n{memory_text}\n\nEvidence:\n{context}\n\nQuestion: {query}",
-                },
-            ],
-            temperature=0.2,
+        response = requests.post(
+            invoke_url,
+            headers=headers,
+            json=payload,
+            timeout=60,
         )
-    except Exception:
+        response.raise_for_status()
+        data = response.json()
+    except (requests.RequestException, json.JSONDecodeError, ValueError):
         return None
-    content = response.choices[0].message.content
+
+    choices = data.get("choices") or []
+    if not choices:
+        return None
+    content = choices[0].get("message", {}).get("content")
     return str(content).strip() if content else None

@@ -4,7 +4,10 @@
 
 The project is intentionally local-first. The hashing embedder makes the
 default demo reproducible without credentials, while the optional
-sentence-transformer path provides a higher-quality retrieval upgrade.
+sentence-transformer path provides a higher-quality retrieval upgrade. LLM
+generation uses NVIDIA-hosted NIM chat only when `NVIDIA_API_KEY` is present.
+Optional company research uses Exa only when `EXA_API_KEY` is present and the
+user asks for `--research-company`.
 
 The system keeps memory separate from document evidence. Memory stores durable
 preferences and facts; the vector index stores cited project evidence. This
@@ -27,7 +30,7 @@ measurement loop needed for larger portfolio datasets.
   different.
 - The sample corpus is small; a real candidate should add more project notes,
   resume bullets, and job descriptions.
-- Without an LLM key, answers are extractive rather than polished. This is a
+- Without an NVIDIA key, answers are extractive rather than polished. This is a
   deliberate reproducibility tradeoff.
 
 ## Future Improvements

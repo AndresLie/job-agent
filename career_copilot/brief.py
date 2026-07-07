@@ -12,17 +12,33 @@ from .vector_store import JsonVectorStore, keyword_tokens
 
 
 def generate_brief(
-    job_path: Path,
+    job_path: Path | None,
     store: JsonVectorStore,
     embedder: Embedder,
     memory: MemoryStore,
     top_k: int = 8,
     write_contract: bool = False,
+    job_text: str | None = None,
+    job_title: str | None = None,
+    job_company: str = "",
+    job_url: str | None = None,
+    job_source_type: str = "file",
+    job_cached_path: str | None = None,
+    web_research: list[dict] | None = None,
 ) -> dict:
-    job_text = clean_text(job_path.read_text(encoding="utf-8", errors="ignore"))
-    hits = store.query(job_text, embedder, top_k)
-    memories = [item.summary for item in memory.retrieve(job_text, k=5)]
-    job_terms = keyword_tokens(job_text)
+    if job_text is None:
+        if job_path is None:
+            raise ValueError("job_path or job_text is required")
+        job_text = job_path.read_text(encoding="utf-8", errors="ignore")
+    job_text = clean_text(job_text)
+    research_text = "\n".join(
+        " ".join([source.get("title", ""), source.get("summary", ""), " ".join(source.get("highlights", []))])
+        for source in (web_research or [])
+    )
+    comparison_text = clean_text(job_text + "\n\n" + research_text)
+    hits = store.query(comparison_text, embedder, top_k)
+    memories = [item.summary for item in memory.retrieve(comparison_text, k=5)]
+    job_terms = keyword_tokens(comparison_text)
     evidence_terms = set()
     for hit in hits:
         evidence_terms |= keyword_tokens(hit["text"])
@@ -31,12 +47,19 @@ def generate_brief(
     gaps = sorted(term for term in job_terms - evidence_terms if is_skill_like(term))[:8]
     fit_score = min(100, int((len(matched) / max(len(job_terms), 1)) * 140))
     payload = {
-        "job_title": infer_title(job_text, job_path),
+        "job_title": job_title or infer_title(job_text, job_path),
+        "job_input": {
+            "source_type": job_source_type,
+            "company": job_company,
+            "url": job_url,
+            "cached_path": job_cached_path,
+        },
         "fit_score": fit_score,
         "matched_evidence": build_matched_evidence(hits, matched, memories),
         "skill_gaps": gaps,
         "recommended_actions": build_actions(gaps, hits),
         "citations": build_citations(hits),
+        "web_research": web_research or [],
         "confidence": 0.78 if hits else 0.35,
     }
     ok, reason = validate_brief(payload)
@@ -47,11 +70,13 @@ def generate_brief(
     return payload
 
 
-def infer_title(job_text: str, path: Path) -> str:
+def infer_title(job_text: str, path: Path | None) -> str:
     for line in job_text.splitlines():
         stripped = line.strip("# ").strip()
         if stripped and len(stripped) < 90:
             return stripped
+    if path is None:
+        return "Job Description"
     return path.stem.replace("_", " ").replace("-", " ").title()
 
 

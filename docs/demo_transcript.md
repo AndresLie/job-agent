@@ -20,7 +20,7 @@ Returns cited evidence from the RAG project, Pi Memory project, and Hermes
 evaluation project.
 
 ```bash
-python -m career_copilot brief --job data/raw/jobs/job_posting.md --write-contract
+python -m career_copilot brief --job-file data/raw/jobs/job_posting.md --write-contract
 ```
 
 Writes a structured job-fit brief with matched evidence, skill gaps, actions,

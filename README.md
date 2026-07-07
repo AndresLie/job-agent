@@ -10,8 +10,8 @@ It combines three AI engineering patterns:
 - Deterministic JSON contracts and retrieval evaluation.
 
 The default path uses a local hashing embedder, so the demo runs without API
-keys or model downloads. Optional LiteLLM and sentence-transformer paths are
-available when configured.
+keys or model downloads. NVIDIA-hosted NIM chat and sentence-transformer
+retrieval are optional when configured.
 
 ## Quickstart
 
@@ -24,11 +24,48 @@ python -m career_copilot ingest --source data/raw --rebuild
 python -m career_copilot remember --summary "I prefer backend AI engineering roles using Python, retrieval, and evaluation." --tags career,preference
 python -m career_copilot recall "backend AI roles"
 python -m career_copilot ask "Which projects show RAG, memory, and evaluation experience?" --no-llm
-python -m career_copilot brief --job data/raw/jobs/job_posting.md --write-contract
+python -m career_copilot brief --job-file data/raw/jobs/job_posting.md --write-contract
 python -m career_copilot evaluate
 ```
 
 `--rebuild` resets the demo storage, including vector records and memory.
+
+## Optional NVIDIA LLM
+
+`ask` gives local extractive answers when no LLM key is configured or when
+`--no-llm` is passed. To enable NVIDIA-hosted NIM chat:
+
+```powershell
+$env:NVIDIA_API_KEY="your_key_here"
+$env:NVIDIA_MODEL="google/gemma-4-31b-it"
+python -m career_copilot ask "How should I pitch my RAG experience?"
+```
+
+Optional environment variables:
+
+- `NVIDIA_API_KEY`: required for hosted NVIDIA NIM chat.
+- `NVIDIA_MODEL`: defaults to `google/gemma-4-31b-it`.
+- `NVIDIA_BASE_URL`: defaults to `https://integrate.api.nvidia.com/v1`.
+- `NVIDIA_MAX_TOKENS`: defaults to `2048`.
+- `NVIDIA_TEMPERATURE`: defaults to `1.0`.
+- `NVIDIA_TOP_P`: defaults to `0.95`.
+
+## Optional Company Web Research
+
+For company/job context from the web, set `EXA_API_KEY` and use Exa-backed
+research. Fetched job pages and research notes are cached by default under
+`data/raw/jobs/` and `data/raw/company_research/` so the sources remain
+auditable.
+
+```powershell
+$env:EXA_API_KEY="your_exa_key_here"
+python -m career_copilot brief --job-url "https://company.com/careers/job-123" --research-company
+python -m career_copilot brief --job-text "Paste JD here" --company "NVIDIA" --research-company
+python -m career_copilot research-company --company "NVIDIA" --role "AI Engineer"
+```
+
+Use `--no-cache` if you want fetched job text or company research to be used
+only for the current command.
 
 ## Use Your Own Experience Folder
 
@@ -53,7 +90,9 @@ Then index that folder as the RAG source:
 ```bash
 python -m career_copilot ingest --source path\to\my-experience --rebuild
 python -m career_copilot ask "Which experience proves I can build RAG systems?" --no-llm
-python -m career_copilot brief --job path\to\job_posting.md
+python -m career_copilot brief --job-file path\to\job_posting.md
+python -m career_copilot brief --job-text "Paste the job description here"
+python -m career_copilot brief --job-url "https://company.com/careers/job-123"
 ```
 
 Use memory for facts that should persist across sessions but are not source
@@ -91,7 +130,9 @@ python -m career_copilot ingest --source data/raw --rebuild
 python -m career_copilot ask "How should I pitch my AI engineering projects?" --no-llm
 python -m career_copilot remember --summary "Target roles should emphasize evaluation and reliable AI systems."
 python -m career_copilot recall "target roles"
-python -m career_copilot brief --job data/raw/jobs/job_posting.md
+python -m career_copilot brief --job-file data/raw/jobs/job_posting.md
+python -m career_copilot brief --job-text "Paste the JD here"
+python -m career_copilot brief --job-url "https://company.com/careers/job-123" --research-company
 python -m career_copilot evaluate --k 5
 ```
 

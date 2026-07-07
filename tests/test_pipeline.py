@@ -39,3 +39,29 @@ def test_generate_brief_has_required_fields(tmp_path):
     brief = generate_brief(job, store, embedder, memory)
     assert brief["job_title"] == "AI Engineer"
     assert brief["matched_evidence"]
+
+
+def test_generate_brief_from_text_with_web_research(tmp_path):
+    store, embedder, memory = build_store(tmp_path)
+    brief = generate_brief(
+        None,
+        store,
+        embedder,
+        memory,
+        job_text="# AI Engineer\nPython retrieval evaluation",
+        job_title="AI Engineer",
+        job_company="Example",
+        job_source_type="text",
+        web_research=[
+            {
+                "title": "Example Engineering",
+                "url": "https://example.com",
+                "source_type": "exa",
+                "highlights": ["Example builds AI platforms"],
+                "summary": "Company engineering context",
+            }
+        ],
+    )
+    assert brief["job_input"]["source_type"] == "text"
+    assert brief["job_input"]["company"] == "Example"
+    assert brief["web_research"][0]["source_type"] == "exa"

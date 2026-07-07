@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from .answer import answer_query
@@ -9,8 +10,10 @@ from .brief import generate_brief
 from .documents import chunk_document, discover_documents, load_document
 from .embeddings import build_embedder
 from .evaluate import evaluate_retrieval
+from .job_input import resolve_job_input
 from .memory import MemoryStore
 from .vector_store import JsonVectorStore, clear_storage
+from .web_research import research_company
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -18,6 +21,8 @@ DEFAULT_DATA = PROJECT_ROOT / "data" / "raw"
 DEFAULT_STORAGE = PROJECT_ROOT / "storage"
 DEFAULT_INDEX = DEFAULT_STORAGE / "vector_store.json"
 DEFAULT_MEMORY = DEFAULT_STORAGE / "memory.json"
+DEFAULT_JOBS = DEFAULT_DATA / "jobs"
+DEFAULT_COMPANY_RESEARCH = DEFAULT_DATA / "company_research"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -44,9 +49,22 @@ def build_parser() -> argparse.ArgumentParser:
     recall.add_argument("--json", action="store_true", help="Print matching memories as JSON")
 
     brief = sub.add_parser("brief", help="Generate a structured job fit brief")
-    brief.add_argument("--job", type=Path, required=True)
+    brief.add_argument("--job", type=Path, default=None, help="Backward-compatible alias for --job-file")
+    brief.add_argument("--job-file", type=Path, default=None)
+    brief.add_argument("--job-text", default=None)
+    brief.add_argument("--job-url", default=None)
+    brief.add_argument("--stdin", action="store_true", help="Read job description text from stdin")
+    brief.add_argument("--company", default=None)
+    brief.add_argument("--research-company", action="store_true")
+    brief.add_argument("--no-cache", action="store_true")
     brief.add_argument("--top-k", type=int, default=8)
     brief.add_argument("--write-contract", action="store_true")
+
+    research = sub.add_parser("research-company", help="Fetch company/job context with Exa")
+    research.add_argument("--company", required=True)
+    research.add_argument("--role", default="AI Engineer")
+    research.add_argument("--num-results", type=int, default=5)
+    research.add_argument("--no-cache", action="store_true")
 
     evaluate = sub.add_parser("evaluate", help="Evaluate retrieval quality")
     evaluate.add_argument("--queries", type=Path, default=PROJECT_ROOT / "benchmarks" / "queries.jsonl")
@@ -105,7 +123,61 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cmd == "brief":
-        payload = generate_brief(args.job, store, embedder, memory, top_k=args.top_k, write_contract=args.write_contract)
+        job_file = args.job_file or args.job
+        job = resolve_job_input(
+            job_file=job_file,
+            job_text=args.job_text,
+            job_url=args.job_url,
+            use_stdin=args.stdin,
+            company=args.company,
+            cache_dir=DEFAULT_JOBS,
+            cache=not args.no_cache,
+        )
+        web_sources = []
+        if args.research_company:
+            company = job.company or args.company
+            if not company:
+                raise SystemExit("--research-company requires --company when it cannot be inferred from the job URL.")
+            try:
+                web_sources = research_company(
+                    company=company,
+                    role=job.title,
+                    cache_dir=DEFAULT_COMPANY_RESEARCH,
+                    cache=not args.no_cache,
+                )
+            except RuntimeError as exc:
+                print(f"Error: {exc}", file=sys.stderr)
+                return 1
+        payload = generate_brief(
+            job_file,
+            store,
+            embedder,
+            memory,
+            top_k=args.top_k,
+            write_contract=args.write_contract,
+            job_text=job.text,
+            job_title=job.title,
+            job_company=job.company,
+            job_url=job.url,
+            job_source_type=job.source_type,
+            job_cached_path=job.cached_path,
+            web_research=web_sources,
+        )
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.cmd == "research-company":
+        try:
+            payload = research_company(
+                company=args.company,
+                role=args.role,
+                num_results=args.num_results,
+                cache_dir=DEFAULT_COMPANY_RESEARCH,
+                cache=not args.no_cache,
+            )
+        except RuntimeError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
 
