@@ -52,11 +52,15 @@ def generate_brief(
     gaps = sorted(job_terms - resume_terms - supporting_terms)[:8]
     missing_from_cv = sorted(job_terms - resume_terms)
     fit_score = score_resume_match(job_terms, resume_terms, resume_hits)
+    application_verdict = build_application_verdict(fit_score, hidden_terms, gaps, resume_hits)
+    cv_rewrite_suggestions = build_cv_rewrite_suggestions(supporting_hits, hidden_terms)
     brutal_assessment = build_brutal_assessment(fit_score, matched, hidden_terms, gaps, resume_hits, supporting_hits)
     llm_review = generate_brutal_llm_review(
         job_title=job_title or infer_title(job_text, job_path),
         job_text=job_text,
         fit_score=fit_score,
+        application_verdict=application_verdict,
+        cv_rewrite_suggestions=cv_rewrite_suggestions,
         matched=matched,
         hidden_terms=hidden_terms,
         gaps=gaps,
@@ -83,6 +87,8 @@ def generate_brief(
         "matched_evidence": build_matched_evidence(resume_hits, matched, memories),
         "hidden_evidence": build_hidden_evidence(supporting_hits, hidden_terms),
         "skill_gaps": gaps,
+        "application_verdict": application_verdict,
+        "cv_rewrite_suggestions": cv_rewrite_suggestions,
         "recommended_actions": build_actions(gaps, hidden_terms, supporting_hits, resume_hits),
         "brutal_assessment": brutal_assessment,
         "llm_brutal_review": llm_review,
@@ -161,6 +167,62 @@ def score_verdict(score: int) -> str:
     return "not_competitive_from_cv"
 
 
+def build_application_verdict(
+    fit_score: int,
+    hidden_terms: list[str],
+    gaps: list[str],
+    resume_hits: list[dict],
+) -> dict:
+    if not resume_hits:
+        return {
+            "label": "not_competitive",
+            "apply_now": False,
+            "risk_level": "high",
+            "reason": "No indexed CV/resume evidence was found, so the application is not defensible yet.",
+        }
+    if fit_score < 25:
+        if hidden_terms:
+            return {
+                "label": "weak_match",
+                "apply_now": False,
+                "risk_level": "high",
+                "reason": "The current CV is very weak for this JD, though projects or experience contain evidence that could support a rewrite.",
+            }
+        return {
+            "label": "not_competitive",
+            "apply_now": False,
+            "risk_level": "high",
+            "reason": "The current CV and supporting evidence do not cover enough of the JD requirements.",
+        }
+    if fit_score < 50:
+        return {
+            "label": "weak_match",
+            "apply_now": False,
+            "risk_level": "high",
+            "reason": "The current CV has some relevant signals, but it is unlikely to pass a strict screen without a rewrite.",
+        }
+    if fit_score < 75:
+        return {
+            "label": "stretch",
+            "apply_now": True,
+            "risk_level": "medium",
+            "reason": "The CV has a plausible base match, but gaps and missing evidence make this a stretch application.",
+        }
+    if len(gaps) >= 3:
+        return {
+            "label": "stretch",
+            "apply_now": True,
+            "risk_level": "medium",
+            "reason": "The CV has strong overlap, but several uncovered requirements remain risky.",
+        }
+    return {
+        "label": "strong_match",
+        "apply_now": True,
+        "risk_level": "low",
+        "reason": "The current CV covers most visible JD requirements from indexed evidence.",
+    }
+
+
 def build_cv_feedback(score: int, matched: list[str], missing_from_cv: list[str], resume_hits: list[dict]) -> str:
     if not resume_hits:
         return "No resume/CV evidence was indexed, so the JD-to-CV score is 0. Add a resume or CV under a resume/ folder."
@@ -214,6 +276,64 @@ def build_hidden_evidence(hits: list[dict], hidden_terms: list[str]) -> list[dic
             }
         )
     return evidence
+
+
+def build_cv_rewrite_suggestions(hits: list[dict], hidden_terms: list[str]) -> list[dict]:
+    suggestions = []
+    seen_sources = set()
+    for hit in hits:
+        terms = sorted(skill_terms(hit["text"]) & set(hidden_terms))[:5]
+        if not terms:
+            continue
+        source_key = (hit.get("source_path", hit["filename"]), hit["chunk_index"], tuple(terms))
+        if source_key in seen_sources:
+            continue
+        seen_sources.add(source_key)
+        suggestions.append(
+            {
+                "bullet": build_cv_bullet(hit, terms),
+                "target_terms": terms,
+                "source_path": hit.get("source_path", hit["filename"]),
+                "chunk_index": hit["chunk_index"],
+                "confidence": rewrite_confidence(hit, terms),
+            }
+        )
+        if len(suggestions) == 6:
+            break
+    return suggestions
+
+
+def build_cv_bullet(hit: dict, terms: list[str]) -> str:
+    category = hit.get("category", "general")
+    verb = "Delivered" if category == "experience" else "Built"
+    readable_terms = join_terms(terms)
+    summary = re.sub(r"\s+", " ", hit["text"]).strip()
+    evidence = trim_sentence(summary, 150)
+    return (
+        f"{verb} work demonstrating {readable_terms}, grounded in: {evidence}. "
+        "Quantify impact if true."
+    )
+
+
+def rewrite_confidence(hit: dict, terms: list[str]) -> float:
+    score = float(hit.get("score", 0.0))
+    term_bonus = min(0.25, len(terms) * 0.05)
+    return round(min(0.95, max(0.45, score + term_bonus)), 2)
+
+
+def join_terms(terms: list[str]) -> str:
+    if not terms:
+        return "the target requirement"
+    if len(terms) == 1:
+        return terms[0]
+    return ", ".join(terms[:-1]) + f", and {terms[-1]}"
+
+
+def trim_sentence(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    trimmed = text[:limit].rsplit(" ", 1)[0]
+    return trimmed + "..."
 
 
 def build_actions(
@@ -281,6 +401,8 @@ def generate_brutal_llm_review(
     job_title: str,
     job_text: str,
     fit_score: int,
+    application_verdict: dict,
+    cv_rewrite_suggestions: list[dict],
     matched: list[str],
     hidden_terms: list[str],
     gaps: list[str],
@@ -289,23 +411,30 @@ def generate_brutal_llm_review(
 ) -> str | None:
     resume_context = format_hits_for_prompt(resume_hits[:4])
     supporting_context = format_hits_for_prompt(supporting_hits[:5])
+    rewrite_context = "\n".join(
+        f"- {item['bullet']} (source: {item['source_path']} chunk {item['chunk_index']})"
+        for item in cv_rewrite_suggestions
+    )
     return nvidia_chat(
         system_prompt=(
             "You are a brutally honest career reviewer for data scientist and AI roles. "
             "Use only the supplied JD, CV evidence, and project/experience evidence. "
             "Do not flatter the candidate. If the evidence is insufficient, say so clearly. "
-            "Separate current CV fit from recommendations to improve the CV."
+            "Separate current CV fit from recommendations to improve the CV. "
+            "Do not invent metrics, employers, outcomes, or tools."
         ),
         user_prompt=(
             f"Job title: {job_title}\n"
             f"JD excerpt:\n{job_text[:3500]}\n\n"
             f"Deterministic JD-to-CV score: {fit_score}/100\n"
+            f"Deterministic application verdict: {application_verdict}\n"
             f"CV matched terms: {', '.join(matched) or 'none'}\n"
             f"Terms found in projects/experience but missing from CV: {', '.join(hidden_terms) or 'none'}\n"
             f"Terms with no evidence: {', '.join(gaps) or 'none'}\n\n"
             f"CV evidence:\n{resume_context or 'No CV evidence.'}\n\n"
             f"Project/experience evidence:\n{supporting_context or 'No project/experience evidence.'}\n\n"
-            "Return concise feedback with: verdict, why, what to add to the CV, and whether applying is realistic."
+            f"Grounded draft CV bullets:\n{rewrite_context or 'No grounded rewrite suggestions.'}\n\n"
+            "Return concise feedback with: verdict, why, improved CV bullets, and whether applying is realistic."
         ),
     )
 

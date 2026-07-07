@@ -34,6 +34,8 @@ python -m career_copilot evaluate
 `brief` deliberately scores the JD against only indexed `resume/` or `cv/`
 documents. Project and experience documents are used afterward as hidden
 evidence for CV rewrites, not as proof that the current CV already matches.
+The output also includes an application verdict and grounded CV bullet
+suggestions, so weak evidence can produce a blunt "do not apply yet" result.
 
 ## Guided Workflow
 
@@ -160,6 +162,8 @@ resume/project/experience documents. Safe public examples live under
 - Retrieval scoring with semantic hashing plus lexical reranking.
 - Persistent memory with deterministic BM25 retrieval.
 - Separate JD-to-CV scoring from project/experience-based CV recommendations.
+- Application verdicts with apply/no-apply guidance.
+- Grounded CV rewrite bullets that cite project or experience chunks.
 - Brutally honest LLM review when NVIDIA chat is configured, with deterministic
   fallback when it is not.
 - Structured job-fit output with a validated JSON result contract.
@@ -192,6 +196,8 @@ object with:
 - `matched_evidence`
 - `hidden_evidence`
 - `skill_gaps`
+- `application_verdict`
+- `cv_rewrite_suggestions`
 - `recommended_actions`
 - `brutal_assessment`
 - `llm_brutal_review`

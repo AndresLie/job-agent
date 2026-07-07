@@ -96,3 +96,80 @@ def test_brief_scores_resume_only_and_uses_projects_for_cv_recommendations(tmp_p
     assert brief["cv_match"]["matched_terms"] == ["python"]
     assert any("rag" in item["terms_to_add_to_cv"] for item in brief["hidden_evidence"])
     assert all(item["category"] != "jobs" for item in brief["citations"])
+    assert brief["application_verdict"]["label"] in {"weak_match", "stretch"}
+    assert brief["cv_rewrite_suggestions"]
+    assert all("jobs/" not in item["source_path"] for item in brief["cv_rewrite_suggestions"])
+
+
+def test_brief_verdict_not_competitive_without_resume(tmp_path, monkeypatch):
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    store, embedder, memory = build_store(tmp_path)
+
+    brief = generate_brief(
+        None,
+        store,
+        embedder,
+        memory,
+        job_text="# AI Engineer\nPython RAG retrieval evaluation",
+        job_title="AI Engineer",
+    )
+
+    assert brief["fit_score"] == 0
+    assert brief["application_verdict"]["label"] == "not_competitive"
+    assert brief["application_verdict"]["apply_now"] is False
+
+
+def test_brief_verdict_strong_match_for_high_resume_overlap(tmp_path, monkeypatch):
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    embedder = HashingEmbedder()
+    store = JsonVectorStore(tmp_path / "vectors.json")
+    memory = MemoryStore(tmp_path / "memory.json")
+    resume = tmp_path / "resume" / "cv.md"
+    resume.parent.mkdir()
+    resume.write_text("Python SQL RAG retrieval evaluation machine learning LLM agent.", encoding="utf-8")
+    store.upsert_chunks(chunk_document(resume, resume.read_text(encoding="utf-8"), root=tmp_path), embedder)
+
+    brief = generate_brief(
+        None,
+        store,
+        embedder,
+        memory,
+        job_text="# AI Engineer\nPython SQL RAG retrieval evaluation",
+        job_title="AI Engineer",
+    )
+
+    assert brief["fit_score"] >= 75
+    assert brief["application_verdict"]["label"] == "strong_match"
+    assert brief["application_verdict"]["apply_now"] is True
+
+
+def test_cv_rewrite_suggestions_are_grounded_in_supporting_evidence(tmp_path, monkeypatch):
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    embedder = HashingEmbedder()
+    store = JsonVectorStore(tmp_path / "vectors.json")
+    memory = MemoryStore(tmp_path / "memory.json")
+
+    for folder, filename, text in [
+        ("resume", "cv.md", "Python SQL analytics."),
+        ("experience", "internship.md", "Delivered machine learning evaluation pipelines with RAG retrieval checks."),
+        ("jobs", "job.md", "RAG retrieval evaluation agent machine learning."),
+    ]:
+        path = tmp_path / folder / filename
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        store.upsert_chunks(chunk_document(path, text, root=tmp_path), embedder)
+
+    brief = generate_brief(
+        None,
+        store,
+        embedder,
+        memory,
+        job_text="# Data Scientist\nPython machine learning RAG retrieval evaluation",
+        job_title="Data Scientist",
+    )
+
+    assert brief["cv_rewrite_suggestions"]
+    suggestion = brief["cv_rewrite_suggestions"][0]
+    assert suggestion["source_path"].startswith("experience/")
+    assert isinstance(suggestion["chunk_index"], int)
+    assert "Quantify impact if true." in suggestion["bullet"]

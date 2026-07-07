@@ -10,6 +10,8 @@ REQUIRED_BRIEF_FIELDS = {
     "job_title",
     "fit_score",
     "matched_evidence",
+    "application_verdict",
+    "cv_rewrite_suggestions",
     "skill_gaps",
     "recommended_actions",
     "citations",
@@ -27,6 +29,17 @@ def validate_brief(payload: dict[str, Any]) -> tuple[bool, str]:
         return False, f"missing fields: {', '.join(missing)}"
     if not isinstance(payload["matched_evidence"], list):
         return False, "matched_evidence must be a list"
+    if not isinstance(payload["application_verdict"], dict):
+        return False, "application_verdict must be an object"
+    if payload["application_verdict"].get("label") not in {
+        "strong_match",
+        "stretch",
+        "weak_match",
+        "not_competitive",
+    }:
+        return False, "application_verdict label is invalid"
+    if not isinstance(payload["cv_rewrite_suggestions"], list):
+        return False, "cv_rewrite_suggestions must be a list"
     if not isinstance(payload["skill_gaps"], list):
         return False, "skill_gaps must be a list"
     if not isinstance(payload["recommended_actions"], list):

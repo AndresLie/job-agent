@@ -6,6 +6,13 @@ def test_validate_brief_accepts_valid_payload():
         "job_title": "AI Engineer",
         "fit_score": 80,
         "matched_evidence": [],
+        "application_verdict": {
+            "label": "strong_match",
+            "apply_now": True,
+            "risk_level": "low",
+            "reason": "Strong evidence.",
+        },
+        "cv_rewrite_suggestions": [],
         "skill_gaps": [],
         "recommended_actions": [],
         "citations": [],
