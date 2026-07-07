@@ -15,6 +15,7 @@ from .job_input import resolve_job_input
 from .memory import MemoryStore
 from .vector_store import JsonVectorStore, clear_storage
 from .web_research import research_company
+from .wizard import run_demo, run_wizard, write_json
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -60,6 +61,7 @@ def build_parser() -> argparse.ArgumentParser:
     brief.add_argument("--no-cache", action="store_true")
     brief.add_argument("--top-k", type=int, default=8)
     brief.add_argument("--write-contract", action="store_true")
+    brief.add_argument("--output", type=Path, default=None)
 
     research = sub.add_parser("research-company", help="Fetch company/job context with Exa")
     research.add_argument("--company", required=True)
@@ -70,6 +72,9 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate = sub.add_parser("evaluate", help="Evaluate retrieval quality")
     evaluate.add_argument("--queries", type=Path, default=PROJECT_ROOT / "benchmarks" / "queries.jsonl")
     evaluate.add_argument("--k", type=int, default=5)
+
+    sub.add_parser("wizard", help="Run an interactive guided job-copilot workflow")
+    sub.add_parser("demo", help="Run a public sample demo using examples/")
     return parser
 
 
@@ -165,6 +170,8 @@ def main(argv: list[str] | None = None) -> int:
             job_cached_path=job.cached_path,
             web_research=web_sources,
         )
+        if args.output:
+            write_json(args.output, payload)
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
 
@@ -186,6 +193,29 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "evaluate":
         payload = evaluate_retrieval(args.queries, store, embedder, k=args.k)
         print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.cmd == "wizard":
+        run_wizard(
+            project_root=PROJECT_ROOT,
+            data_dir=DEFAULT_DATA,
+            storage=DEFAULT_STORAGE,
+            jobs_dir=DEFAULT_JOBS,
+            company_research_dir=DEFAULT_COMPANY_RESEARCH,
+            store=store,
+            embedder=embedder,
+            memory=memory,
+        )
+        return 0
+
+    if args.cmd == "demo":
+        run_demo(
+            project_root=PROJECT_ROOT,
+            store=store,
+            embedder=embedder,
+            memory=memory,
+            storage=DEFAULT_STORAGE,
+        )
         return 0
 
     return 2

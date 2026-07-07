@@ -30,6 +30,33 @@ python -m career_copilot evaluate
 
 `--rebuild` resets the demo storage, including vector records and memory.
 
+## Guided Workflow
+
+For day-to-day use, run the wizard:
+
+```bash
+python -m career_copilot wizard
+```
+
+The wizard asks for your RAG folder, whether to rebuild the index, an optional
+memory note, the JD input mode, optional company research, and then writes:
+
+```text
+outputs/latest_brief.json
+```
+
+To show the project without private data, run the public sample demo:
+
+```bash
+python -m career_copilot demo
+```
+
+The demo uses only files under `examples/` and writes:
+
+```text
+outputs/demo_brief.json
+```
+
 ## Optional NVIDIA LLM
 
 `ask` gives local extractive answers when no LLM key is configured or when
@@ -116,6 +143,10 @@ The category folders are used in citations and JSON output:
 - `experience/` or `work/`: internships, work history, certificates, impact notes.
 - `jobs/`: optional sample job descriptions for demos.
 
+Your private files should stay under `data/raw/`, which is ignored for private
+resume/project/experience documents. Safe public examples live under
+`examples/`.
+
 ## What It Demonstrates
 
 - Document ingestion, cleaning, chunking, and citation tracking.
@@ -134,6 +165,9 @@ python -m career_copilot recall "target roles"
 python -m career_copilot brief --job-file data/raw/jobs/job_posting.md
 python -m career_copilot brief --job-text "Paste the JD here"
 python -m career_copilot brief --job-url "https://company.com/careers/job-123" --research-company
+python -m career_copilot brief --job-text "Paste the JD here" --output outputs/latest_brief.json
+python -m career_copilot wizard
+python -m career_copilot demo
 python -m career_copilot evaluate --k 5
 ```
 

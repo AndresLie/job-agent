@@ -4,9 +4,9 @@ __pycache__/
 .ruff_cache/
 .venv/
 .env
-storage/*.json
-storage/chroma/
+storage/
 result.json
+outputs/
 *.tmp
 
 data/raw/resume/*.pdf
