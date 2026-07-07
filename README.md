@@ -36,6 +36,9 @@ documents. Project and experience documents are used afterward as hidden
 evidence for CV rewrites, not as proof that the current CV already matches.
 The output also includes an application verdict and grounded CV bullet
 suggestions, so weak evidence can produce a blunt "do not apply yet" result.
+The score is a role-aware rubric, not a hiring probability: it considers
+required skill coverage, responsibility alignment, evidence depth, quantified
+impact, and preferred skills.
 
 ## Guided Workflow
 
@@ -162,6 +165,8 @@ resume/project/experience documents. Safe public examples live under
 - Retrieval scoring with semantic hashing plus lexical reranking.
 - Persistent memory with deterministic BM25 retrieval.
 - Separate JD-to-CV scoring from project/experience-based CV recommendations.
+- Role-aware job-fit scoring for data scientist, AI engineer, and ML engineer
+  roles.
 - Application verdicts with apply/no-apply guidance.
 - Grounded CV rewrite bullets that cite project or experience chunks.
 - Brutally honest LLM review when NVIDIA chat is configured, with deterministic
@@ -192,6 +197,11 @@ object with:
 
 - `job_title`
 - `fit_score`
+- `role_family`
+- `jd_requirements`
+- `evidence_depth`
+- `scoring_breakdown`
+- `weak_evidence`
 - `cv_match`
 - `matched_evidence`
 - `hidden_evidence`

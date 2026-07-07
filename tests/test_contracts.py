@@ -5,6 +5,17 @@ def test_validate_brief_accepts_valid_payload():
     payload = {
         "job_title": "AI Engineer",
         "fit_score": 80,
+        "role_family": "ai_engineer",
+        "jd_requirements": {"required": ["python"], "preferred": [], "responsibilities": []},
+        "evidence_depth": {"by_term": {}},
+        "scoring_breakdown": {
+            "required_skill_coverage": 45,
+            "responsibility_alignment": 20,
+            "evidence_depth": 10,
+            "quantified_impact": 5,
+            "preferred_coverage": 0,
+        },
+        "weak_evidence": [],
         "matched_evidence": [],
         "application_verdict": {
             "label": "strong_match",

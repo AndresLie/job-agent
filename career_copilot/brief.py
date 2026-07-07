@@ -8,6 +8,7 @@ from .contracts import validate_brief, write_json_contract
 from .documents import clean_text
 from .embeddings import Embedder
 from .memory import MemoryStore
+from .rubric import analyze_evidence_depth, analyze_job_requirements, known_skill_terms, score_with_rubric
 from .vector_store import JsonVectorStore, keyword_tokens
 
 
@@ -43,16 +44,20 @@ def generate_brief(
     resume_hits = store.query(comparison_text, embedder, top_k, categories=RESUME_CATEGORIES)
     supporting_hits = store.query(comparison_text, embedder, top_k, categories=SUPPORTING_CATEGORIES)
     memories = [item.summary for item in memory.retrieve(comparison_text, k=5)]
-    job_terms = skill_terms(comparison_text)
+    requirements = analyze_job_requirements(comparison_text)
+    evidence_depth = analyze_evidence_depth(requirements, resume_hits, supporting_hits)
+    rubric_result = score_with_rubric(requirements, evidence_depth, resume_hits)
+    job_terms = set(requirements["required"]) | set(requirements["preferred"])
     resume_terms = collect_terms(resume_hits)
     supporting_terms = collect_terms(supporting_hits)
 
-    matched = sorted(job_terms & resume_terms)
-    hidden_terms = sorted((job_terms - resume_terms) & supporting_terms)
-    gaps = sorted(job_terms - resume_terms - supporting_terms)[:8]
-    missing_from_cv = sorted(job_terms - resume_terms)
-    fit_score = score_resume_match(job_terms, resume_terms, resume_hits)
-    application_verdict = build_application_verdict(fit_score, hidden_terms, gaps, resume_hits)
+    matched = rubric_result["matched_terms"]
+    hidden_terms = rubric_result["hidden_terms"] or sorted((job_terms - resume_terms) & supporting_terms)
+    gaps = rubric_result["skill_gaps"][:8]
+    missing_from_cv = rubric_result["missing_from_cv"]
+    weak_evidence = rubric_result["weak_evidence"]
+    fit_score = rubric_result["fit_score"]
+    application_verdict = build_application_verdict(fit_score, hidden_terms, gaps, weak_evidence, resume_hits)
     cv_rewrite_suggestions = build_cv_rewrite_suggestions(supporting_hits, hidden_terms)
     brutal_assessment = build_brutal_assessment(fit_score, matched, hidden_terms, gaps, resume_hits, supporting_hits)
     llm_review = generate_brutal_llm_review(
@@ -61,6 +66,10 @@ def generate_brief(
         fit_score=fit_score,
         application_verdict=application_verdict,
         cv_rewrite_suggestions=cv_rewrite_suggestions,
+        requirements=requirements,
+        evidence_depth=evidence_depth,
+        scoring_breakdown=rubric_result["scoring_breakdown"],
+        weak_evidence=weak_evidence,
         matched=matched,
         hidden_terms=hidden_terms,
         gaps=gaps,
@@ -77,6 +86,11 @@ def generate_brief(
             "cached_path": job_cached_path,
         },
         "fit_score": fit_score,
+        "role_family": requirements["role_family"],
+        "jd_requirements": requirements,
+        "evidence_depth": evidence_depth,
+        "scoring_breakdown": rubric_result["scoring_breakdown"],
+        "weak_evidence": weak_evidence,
         "cv_match": {
             "score": fit_score,
             "verdict": score_verdict(fit_score),
@@ -115,28 +129,7 @@ def infer_title(job_text: str, path: Path | None) -> str:
 
 
 def is_skill_like(term: str) -> bool:
-    return term in {
-        "python",
-        "sql",
-        "rag",
-        "retrieval",
-        "evaluation",
-        "ml",
-        "machine",
-        "learning",
-        "llm",
-        "agent",
-        "agents",
-        "pytorch",
-        "spark",
-        "airflow",
-        "docker",
-        "aws",
-        "kubernetes",
-        "statistics",
-        "experiment",
-        "experimentation",
-    }
+    return term in known_skill_terms()
 
 
 def skill_terms(text: str) -> set[str]:
@@ -171,6 +164,7 @@ def build_application_verdict(
     fit_score: int,
     hidden_terms: list[str],
     gaps: list[str],
+    weak_evidence: list[str],
     resume_hits: list[dict],
 ) -> dict:
     if not resume_hits:
@@ -180,7 +174,7 @@ def build_application_verdict(
             "risk_level": "high",
             "reason": "No indexed CV/resume evidence was found, so the application is not defensible yet.",
         }
-    if fit_score < 25:
+    if fit_score < 35:
         if hidden_terms:
             return {
                 "label": "weak_match",
@@ -194,14 +188,14 @@ def build_application_verdict(
             "risk_level": "high",
             "reason": "The current CV and supporting evidence do not cover enough of the JD requirements.",
         }
-    if fit_score < 50:
+    if fit_score < 55:
         return {
             "label": "weak_match",
             "apply_now": False,
             "risk_level": "high",
             "reason": "The current CV has some relevant signals, but it is unlikely to pass a strict screen without a rewrite.",
         }
-    if fit_score < 75:
+    if fit_score < 75 or len(weak_evidence) >= 3:
         return {
             "label": "stretch",
             "apply_now": True,
@@ -403,6 +397,10 @@ def generate_brutal_llm_review(
     fit_score: int,
     application_verdict: dict,
     cv_rewrite_suggestions: list[dict],
+    requirements: dict,
+    evidence_depth: dict,
+    scoring_breakdown: dict,
+    weak_evidence: list[str],
     matched: list[str],
     hidden_terms: list[str],
     gaps: list[str],
@@ -428,6 +426,11 @@ def generate_brutal_llm_review(
             f"JD excerpt:\n{job_text[:3500]}\n\n"
             f"Deterministic JD-to-CV score: {fit_score}/100\n"
             f"Deterministic application verdict: {application_verdict}\n"
+            f"Role family: {requirements.get('role_family')}\n"
+            f"JD requirements: {requirements}\n"
+            f"Scoring breakdown: {scoring_breakdown}\n"
+            f"Weak evidence: {', '.join(weak_evidence) or 'none'}\n"
+            f"Evidence depth: {evidence_depth}\n"
             f"CV matched terms: {', '.join(matched) or 'none'}\n"
             f"Terms found in projects/experience but missing from CV: {', '.join(hidden_terms) or 'none'}\n"
             f"Terms with no evidence: {', '.join(gaps) or 'none'}\n\n"

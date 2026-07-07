@@ -126,7 +126,11 @@ def test_brief_verdict_strong_match_for_high_resume_overlap(tmp_path, monkeypatc
     memory = MemoryStore(tmp_path / "memory.json")
     resume = tmp_path / "resume" / "cv.md"
     resume.parent.mkdir()
-    resume.write_text("Python SQL RAG retrieval evaluation machine learning LLM agent.", encoding="utf-8")
+    resume.write_text(
+        "Deployed Python SQL RAG retrieval evaluation machine learning LLM agent work "
+        "that improved benchmark coverage by 30%.",
+        encoding="utf-8",
+    )
     store.upsert_chunks(chunk_document(resume, resume.read_text(encoding="utf-8"), root=tmp_path), embedder)
 
     brief = generate_brief(
