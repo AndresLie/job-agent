@@ -8,3 +8,6 @@ storage/*.json
 storage/chroma/
 result.json
 *.tmp
+
+data/raw/resume/*.pdf
+data/raw/resume/*.PDF
