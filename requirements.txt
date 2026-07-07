@@ -1,0 +1,4 @@
+pytest>=8.0
+pypdf>=5.4.0
+litellm>=1.67.0
+sentence-transformers>=4.1.0

@@ -1,0 +1,47 @@
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+from typing import Any
+
+
+REQUIRED_BRIEF_FIELDS = {
+    "job_title",
+    "fit_score",
+    "matched_evidence",
+    "skill_gaps",
+    "recommended_actions",
+    "citations",
+    "confidence",
+}
+
+
+def result_path(default: str = "result.json") -> Path:
+    return Path(os.getenv("AI_JOB_COPILOT_RESULT_PATH") or default)
+
+
+def validate_brief(payload: dict[str, Any]) -> tuple[bool, str]:
+    missing = sorted(REQUIRED_BRIEF_FIELDS - payload.keys())
+    if missing:
+        return False, f"missing fields: {', '.join(missing)}"
+    if not isinstance(payload["matched_evidence"], list):
+        return False, "matched_evidence must be a list"
+    if not isinstance(payload["skill_gaps"], list):
+        return False, "skill_gaps must be a list"
+    if not isinstance(payload["recommended_actions"], list):
+        return False, "recommended_actions must be a list"
+    if not 0 <= float(payload["fit_score"]) <= 100:
+        return False, "fit_score must be between 0 and 100"
+    if not 0 <= float(payload["confidence"]) <= 1:
+        return False, "confidence must be between 0 and 1"
+    return True, ""
+
+
+def write_json_contract(payload: dict[str, Any], path: Path | None = None) -> Path:
+    path = path or result_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(temporary, path)
+    return path

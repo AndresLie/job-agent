@@ -1,0 +1,10 @@
+[project]
+name = "ai-job-copilot"
+version = "0.1.0"
+description = "Local agentic RAG portfolio project for job and interview intelligence."
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
