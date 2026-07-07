@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .answer import answer_query
 from .brief import generate_brief
+from .config import load_env_file
 from .documents import chunk_document, discover_documents, load_document
 from .embeddings import build_embedder
 from .evaluate import evaluate_retrieval
@@ -73,6 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    load_env_file(PROJECT_ROOT / ".env")
     args = build_parser().parse_args(argv)
     embedder = build_embedder(args.embedder)
     store = JsonVectorStore(DEFAULT_INDEX)

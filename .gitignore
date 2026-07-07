@@ -11,3 +11,7 @@ result.json
 
 data/raw/resume/*.pdf
 data/raw/resume/*.PDF
+data/raw/projects/*.md
+data/raw/projects/*.MD
+data/raw/experience/*.md
+data/raw/experience/*.MD

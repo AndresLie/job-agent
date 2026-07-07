@@ -49,6 +49,7 @@ Optional environment variables:
 - `NVIDIA_MAX_TOKENS`: defaults to `2048`.
 - `NVIDIA_TEMPERATURE`: defaults to `1.0`.
 - `NVIDIA_TOP_P`: defaults to `0.95`.
+- `NVIDIA_TIMEOUT`: defaults to `120` seconds.
 
 ## Optional Company Web Research
 

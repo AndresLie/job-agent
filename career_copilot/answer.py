@@ -113,7 +113,7 @@ def llm_answer(query: str, hits: list[dict], memories: list[str]) -> str | None:
             invoke_url,
             headers=headers,
             json=payload,
-            timeout=60,
+            timeout=float(os.getenv("NVIDIA_TIMEOUT", "120")),
         )
         response.raise_for_status()
         data = response.json()
