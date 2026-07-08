@@ -342,7 +342,10 @@ def build_job_preview(job: Any, source_url: str | None = None) -> dict[str, Any]
         "role_family": requirements.get("role_family", "general_ai_data"),
         "required": requirements.get("required", [])[:12],
         "preferred": requirements.get("preferred", [])[:8],
+        "context": requirements.get("context", [])[:8],
+        "ignored": requirements.get("ignored", [])[:8],
         "responsibilities": requirements.get("responsibilities", [])[:8],
+        "term_details": requirements.get("term_details", [])[:12],
     }
 
 

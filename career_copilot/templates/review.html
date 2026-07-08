@@ -59,6 +59,8 @@
                   <span>Role: <strong>{{ preview.role_family | replace("_", " ") }}</strong></span>
                   <span>Required: <strong>{{ preview.required | join(", ") if preview.required else "none detected" }}</strong></span>
                   <span>Preferred: <strong>{{ preview.preferred | join(", ") if preview.preferred else "none detected" }}</strong></span>
+                  <span>Context: <strong>{{ preview.context | join(", ") if preview.context else "none detected" }}</strong></span>
+                  <span>Ignored: <strong>{{ preview.ignored | join(", ") if preview.ignored else "none" }}</strong></span>
                   <span>Responsibilities: <strong>{{ preview.responsibilities | join(", ") if preview.responsibilities else "none detected" }}</strong></span>
                 </div>
               </div>
@@ -369,6 +371,19 @@
                   {% endif %}
                 </div>
                 <div>
+                  <strong>Context / Ignored</strong>
+                  {% set contextual_terms = (result.jd_requirements.context | default([])) + (result.jd_requirements.ignored | default([])) %}
+                  {% if contextual_terms %}
+                    <ul class="tag-list">
+                      {% for item in contextual_terms %}
+                        <li>{{ item }}</li>
+                      {% endfor %}
+                    </ul>
+                  {% else %}
+                    <p class="muted">No contextual or ignored skills detected.</p>
+                  {% endif %}
+                </div>
+                <div>
                   <strong>Responsibilities</strong>
                   {% if result.jd_requirements.responsibilities %}
                     <ul class="tag-list">
@@ -381,6 +396,19 @@
                   {% endif %}
                 </div>
               </div>
+              {% if result.jd_requirements.term_details %}
+                <div class="term-detail-list">
+                  {% for item in result.jd_requirements.term_details %}
+                    <article class="term-detail">
+                      <div>
+                        <strong>{{ item.term }}</strong>
+                        <span>{{ item.strength }} - weight {{ item.weight }}</span>
+                      </div>
+                      <p>{{ item.reason }}</p>
+                    </article>
+                  {% endfor %}
+                </div>
+              {% endif %}
             </section>
 
             <section class="section-block">

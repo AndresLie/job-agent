@@ -82,21 +82,112 @@ RESPONSIBILITY_ALIASES = {
 }
 
 PREFERRED_MARKERS = {"preferred", "nice to have", "bonus", "plus", "familiarity"}
+REQUIRED_SECTION_MARKERS = {
+    "required",
+    "required qualifications",
+    "minimum qualifications",
+    "basic qualifications",
+    "must have",
+    "requirements",
+    "qualifications",
+}
+PREFERRED_SECTION_MARKERS = {
+    "preferred",
+    "preferred qualifications",
+    "nice to have",
+    "bonus",
+    "plus",
+}
+RESPONSIBILITY_SECTION_MARKERS = {
+    "responsibilities",
+    "what you will do",
+    "what you'll do",
+    "role responsibilities",
+    "day to day",
+}
+CONTEXT_SECTION_MARKERS = {
+    "about us",
+    "about the team",
+    "benefits",
+    "company",
+    "why join",
+}
+
+ROLE_TERM_WEIGHTS = {
+    "ai_engineer": {
+        "rag": 1.3,
+        "llm": 1.25,
+        "retrieval": 1.2,
+        "evaluation": 1.15,
+        "deployment": 1.1,
+        "api": 1.05,
+        "python": 1.0,
+        "embedding": 0.75,
+        "vector_search": 0.9,
+        "prompting": 0.45,
+        "dashboard": 0.25,
+    },
+    "data_scientist": {
+        "sql": 1.25,
+        "statistics": 1.25,
+        "ab_test": 1.2,
+        "forecasting": 1.15,
+        "dashboard": 1.1,
+        "pandas": 1.0,
+        "machine_learning": 0.9,
+        "python": 0.9,
+        "rag": 0.35,
+        "llm": 0.4,
+        "embedding": 0.3,
+        "prompting": 0.25,
+    },
+    "ml_engineer": {
+        "machine_learning": 1.25,
+        "deployment": 1.25,
+        "mlops": 1.2,
+        "docker": 1.05,
+        "kubernetes": 1.1,
+        "api": 1.0,
+        "python": 1.0,
+        "evaluation": 1.0,
+        "dashboard": 0.3,
+        "prompting": 0.35,
+    },
+    "general_ai_data": {},
+}
+SECTION_WEIGHT = {
+    "required": 1.0,
+    "responsibility": 0.85,
+    "preferred": 0.55,
+    "context": 0.2,
+}
+MIN_REQUIRED_WEIGHT = 0.5
 
 
 def analyze_job_requirements(job_text: str) -> dict:
+    sections = split_job_sections(job_text)
     text = normalize(job_text)
     role_family = detect_role_family(text)
-    skills = sorted(extract_skills(text))
-    preferred = sorted(extract_preferred_skills(text, skills))
-    required = [skill for skill in skills if skill not in preferred]
-    responsibilities = sorted(extract_responsibilities(text))
+    term_details = build_term_details(sections, role_family)
+    preferred = sorted(term for term, detail in term_details.items() if detail["strength"] == "preferred")
+    context = sorted(term for term, detail in term_details.items() if detail["strength"] == "context")
+    required = sorted(
+        term
+        for term, detail in term_details.items()
+        if detail["strength"] in {"required", "responsibility"} and detail["weight"] >= MIN_REQUIRED_WEIGHT
+    )
+    responsibilities = sorted(extract_responsibilities_by_section(sections))
+    ignored = sorted(term for term, detail in term_details.items() if detail["weight"] < MIN_REQUIRED_WEIGHT and detail["strength"] != "preferred")
     return {
         "role_family": role_family,
         "required": required,
         "preferred": preferred,
+        "context": context,
+        "ignored": ignored,
         "responsibilities": responsibilities,
-        "all_terms": sorted(set(required) | set(preferred) | set(responsibilities)),
+        "term_details": [term_details[term] for term in sorted(term_details)],
+        "term_weights": {term: detail["weight"] for term, detail in term_details.items()},
+        "all_terms": sorted(set(required) | set(preferred) | set(context) | set(responsibilities)),
     }
 
 
@@ -130,6 +221,7 @@ def score_with_rubric(requirements: dict, depth: dict, resume_hits: list[dict]) 
     required = requirements.get("required") or requirements.get("all_terms") or []
     preferred = requirements.get("preferred") or []
     responsibilities = requirements.get("responsibilities") or []
+    term_weights = requirements.get("term_weights") or {}
     by_term = depth.get("by_term", {})
 
     mentioned_required = covered_terms(required, by_term)
@@ -138,9 +230,9 @@ def score_with_rubric(requirements: dict, depth: dict, resume_hits: list[dict]) 
     preferred_covered = credible_terms(preferred, by_term)
     responsibility_covered = credible_terms(responsibilities, by_term)
 
-    required_component = 45 * ratio(len(required_covered), len(required))
-    responsibility_component = 20 * ratio(len(responsibility_covered), len(responsibilities) or len(required))
-    depth_component = 20 * average_depth(required, by_term)
+    required_component = 45 * weighted_ratio(required_covered, required, term_weights)
+    responsibility_component = 20 * weighted_ratio(responsibility_covered, responsibilities or required, term_weights)
+    depth_component = 20 * weighted_average_depth(required, by_term, term_weights)
     impact_component = 10 * quantified_impact_score(resume_hits)
     preferred_component = 5 * ratio(len(preferred_covered), len(preferred))
     raw_score = round(
@@ -193,6 +285,102 @@ def detect_role_family(text: str) -> str:
     return best_role if best_score else "general_ai_data"
 
 
+def split_job_sections(job_text: str) -> list[dict]:
+    sections: list[dict] = []
+    current = {"section": "required", "heading": "unheaded", "text": ""}
+    for raw_line in job_text.splitlines():
+        line = raw_line.strip(" -\t")
+        if not line:
+            continue
+        heading_part, inline_text = split_heading_line(line)
+        heading = normalize(heading_part.strip("#:"))
+        section = classify_heading(heading)
+        if section and len(heading_part) <= 80:
+            if current["text"].strip():
+                sections.append(current)
+            current = {"section": section, "heading": heading, "text": inline_text}
+            continue
+        current["text"] += " " + line
+    if current["text"].strip():
+        sections.append(current)
+    if not sections:
+        sections.append({"section": "required", "heading": "unheaded", "text": job_text})
+    return sections
+
+
+def split_heading_line(line: str) -> tuple[str, str]:
+    if ":" not in line:
+        return line, ""
+    heading, rest = line.split(":", 1)
+    return heading, rest.strip()
+
+
+def classify_heading(heading: str) -> str | None:
+    if any(marker == heading or marker in heading for marker in PREFERRED_SECTION_MARKERS):
+        return "preferred"
+    if any(marker == heading or marker in heading for marker in REQUIRED_SECTION_MARKERS):
+        return "required"
+    if any(marker == heading or marker in heading for marker in RESPONSIBILITY_SECTION_MARKERS):
+        return "responsibility"
+    if any(marker == heading or marker in heading for marker in CONTEXT_SECTION_MARKERS):
+        return "context"
+    return None
+
+
+def build_term_details(sections: list[dict], role_family: str) -> dict[str, dict]:
+    details: dict[str, dict] = {}
+    for section in sections:
+        section_type = section.get("section", "context")
+        text = normalize(section.get("text", ""))
+        section_skills = extract_skills(text)
+        preferred_skills = extract_preferred_skills(text, section_skills)
+        for term in section_skills:
+            inferred_section = "preferred" if term in preferred_skills or section_type == "preferred" else section_type
+            if inferred_section == "context" and has_required_marker_near_term(text, term):
+                inferred_section = "required"
+            weight = term_weight(term, role_family, inferred_section)
+            existing = details.get(term)
+            candidate = {
+                "term": term,
+                "strength": inferred_section,
+                "section": section_type,
+                "weight": weight,
+                "role_weight": role_term_weight(term, role_family),
+                "section_weight": SECTION_WEIGHT.get(inferred_section, 0.2),
+                "reason": build_term_reason(term, role_family, inferred_section, weight),
+            }
+            if existing is None or candidate["weight"] > existing["weight"]:
+                details[term] = candidate
+    return details
+
+
+def term_weight(term: str, role_family: str, section: str) -> float:
+    return round(role_term_weight(term, role_family) * SECTION_WEIGHT.get(section, 0.2), 3)
+
+
+def role_term_weight(term: str, role_family: str) -> float:
+    return ROLE_TERM_WEIGHTS.get(role_family, {}).get(term, 0.85)
+
+
+def build_term_reason(term: str, role_family: str, section: str, weight: float) -> str:
+    if section == "preferred":
+        return f"{term} appears as preferred or nice-to-have evidence for {role_family}."
+    if section == "context":
+        return f"{term} appears in contextual JD text and is down-weighted for {role_family}."
+    if weight < MIN_REQUIRED_WEIGHT:
+        return f"{term} is low-priority for {role_family} and is not treated as a core requirement."
+    return f"{term} is treated as {section} evidence for {role_family}."
+
+
+def has_required_marker_near_term(text: str, term: str) -> bool:
+    aliases = SKILL_ALIASES.get(term, {term})
+    sentences = split_sentences(text)
+    for sentence in sentences:
+        if any(alias in sentence for alias in aliases) and any(marker in sentence for marker in {"required", "must", "need", "experience with"}):
+            return True
+    return False
+
+
 def extract_skills(text: str) -> set[str]:
     found = set()
     token_set = keyword_tokens(text)
@@ -217,6 +405,26 @@ def extract_responsibilities(text: str) -> set[str]:
         if any(alias in text for alias in aliases):
             found.add(responsibility)
     return found
+
+
+def extract_responsibilities_by_section(sections: list[dict]) -> set[str]:
+    found = set()
+    for section in sections:
+        section_type = section.get("section", "context")
+        text = normalize(section.get("text", ""))
+        section_responsibilities = extract_responsibilities(text)
+        if section_type in {"responsibility", "required"}:
+            found |= section_responsibilities
+        else:
+            for responsibility in section_responsibilities:
+                if role_action_is_explicit(text, responsibility):
+                    found.add(responsibility)
+    return found
+
+
+def role_action_is_explicit(text: str, responsibility: str) -> bool:
+    aliases = RESPONSIBILITY_ALIASES.get(responsibility, {responsibility})
+    return any(alias in text for alias in aliases) and any(marker in text for marker in {"you will", "responsible", "build", "develop", "deploy", "analyze", "communicate"})
 
 
 def best_depth_for_term(term: str, hits: list[dict]) -> str:
@@ -268,6 +476,28 @@ def average_depth(terms: list[str], by_term: dict) -> float:
     if not terms:
         return 0.0
     return sum(DEPTH_POINTS[cv_depth(term, by_term)] for term in terms) / len(terms)
+
+
+def weighted_ratio(covered: Iterable[str], terms: Iterable[str], weights: dict[str, float]) -> float:
+    term_list = list(terms)
+    if not term_list:
+        return 0.0
+    covered_set = set(covered)
+    total = sum(term_score_weight(term, weights) for term in term_list)
+    earned = sum(term_score_weight(term, weights) for term in term_list if term in covered_set)
+    return earned / total if total else 0.0
+
+
+def weighted_average_depth(terms: list[str], by_term: dict, weights: dict[str, float]) -> float:
+    if not terms:
+        return 0.0
+    total = sum(term_score_weight(term, weights) for term in terms)
+    earned = sum(DEPTH_POINTS[cv_depth(term, by_term)] * term_score_weight(term, weights) for term in terms)
+    return earned / total if total else 0.0
+
+
+def term_score_weight(term: str, weights: dict[str, float]) -> float:
+    return max(0.1, float(weights.get(term, 1.0)))
 
 
 def quantified_impact_score(resume_hits: list[dict]) -> float:

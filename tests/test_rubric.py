@@ -30,6 +30,52 @@ def test_role_detection_for_ai_engineer_terms():
     assert {"rag", "llm", "agent", "embedding", "vector_search"} <= set(requirements["required"])
 
 
+def test_ai_engineer_downweights_contextual_prompting_and_dashboards():
+    requirements = analyze_job_requirements(
+        """
+        AI Engineer
+        Responsibilities:
+        Build RAG and LLM retrieval evaluation systems.
+
+        About the team:
+        Internal dashboards track usage, and some teams experiment with prompting.
+        """
+    )
+    assert requirements["role_family"] == "ai_engineer"
+    assert {"rag", "llm", "retrieval", "evaluation"} <= set(requirements["required"])
+    assert "dashboard" not in requirements["required"]
+    assert "prompting" not in requirements["required"]
+    assert {"dashboard", "prompting"} & set(requirements["ignored"])
+
+
+def test_data_scientist_treats_dashboard_as_role_relevant():
+    requirements = analyze_job_requirements(
+        """
+        Data Scientist
+        Required Qualifications:
+        SQL, statistics, dashboards, forecasting, and A/B testing.
+        """
+    )
+    assert requirements["role_family"] == "data_scientist"
+    assert {"sql", "statistics", "dashboard", "forecasting", "ab_test"} <= set(requirements["required"])
+
+
+def test_preferred_section_does_not_become_required():
+    requirements = analyze_job_requirements(
+        """
+        AI Engineer
+        Required Qualifications:
+        Python, RAG, and retrieval evaluation.
+
+        Preferred Qualifications:
+        Prompt engineering and embeddings.
+        """
+    )
+    assert {"python", "rag", "retrieval", "evaluation"} <= set(requirements["required"])
+    assert {"prompting", "embedding"} <= set(requirements["preferred"])
+    assert "prompting" not in requirements["required"]
+
+
 def test_shallow_mentions_do_not_score_as_strong_match():
     requirements = analyze_job_requirements("AI Engineer using Python, RAG, retrieval, and evaluation.")
     depth = analyze_evidence_depth(

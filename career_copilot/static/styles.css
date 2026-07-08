@@ -443,6 +443,35 @@ button.is-loading .button-spinner {
   margin-top: 16px;
 }
 
+.term-detail-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.term-detail {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: #fbfcfd;
+}
+
+.term-detail div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.term-detail span,
+.term-detail p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .score-explain {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -663,6 +692,7 @@ button.is-loading .button-spinner {
   .signal-grid,
   .eval-grid,
   .explain-grid,
+  .term-detail-list,
   .review-grid,
   .diagnostics-grid,
   .history-item,
