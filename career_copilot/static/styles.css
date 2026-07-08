@@ -337,10 +337,35 @@ button.is-loading .button-spinner {
 }
 
 .workspace-grid,
-.signal-grid {
+.signal-grid,
+.eval-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px 22px;
+}
+
+.eval-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.eval-card {
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  background: #fbfcfd;
+}
+
+.eval-card span,
+.eval-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.eval-card strong {
+  font-size: 25px;
 }
 
 .workspace-column {
@@ -410,6 +435,40 @@ button.is-loading .button-spinner {
   height: 100%;
   border-radius: inherit;
   background: var(--accent);
+}
+
+.score-explain-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.score-explain {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfcfd;
+}
+
+.score-explain p {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.explain-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.explain-grid > div > span {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 .tag-list {
@@ -519,6 +578,33 @@ button.is-loading .button-spinner {
   overflow-wrap: anywhere;
 }
 
+.claim-box {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  padding: 10px;
+  background: #fbfcfd;
+  font-size: 13px;
+}
+
+.claim-box p,
+.claim-box span {
+  margin: 0;
+  color: var(--muted);
+}
+
+.claim-supported {
+  border-left-color: var(--good);
+}
+
+.claim-needs_verification,
+.claim-unsupported {
+  border-left-color: var(--warn);
+}
+
 .citation-list span {
   color: var(--muted);
   font-size: 13px;
@@ -575,6 +661,8 @@ button.is-loading .button-spinner {
   .section-grid,
   .workspace-grid,
   .signal-grid,
+  .eval-grid,
+  .explain-grid,
   .review-grid,
   .diagnostics-grid,
   .history-item,

@@ -34,7 +34,8 @@ def render_cv_rewrite_markdown(payload: dict[str, Any]) -> str:
         lines.append("No grounded rewrite suggestions were found.")
     for index, item in enumerate(suggestions, start=1):
         confidence = float(item.get("confidence", 0.0))
-        safe_to_claim = confidence >= 0.65
+        verification = item.get("claim_verification") or {}
+        safe_to_claim = bool(item.get("safe_to_claim", confidence >= 0.65))
         lines.extend(
             [
                 f"### Bullet {index}",
@@ -45,6 +46,8 @@ def render_cv_rewrite_markdown(payload: dict[str, Any]) -> str:
                 f"- Target terms: {', '.join(item.get('target_terms') or []) or 'none'}",
                 f"- Confidence: {confidence}",
                 f"- Safe to claim now: {'yes' if safe_to_claim else 'needs verification'}",
+                f"- Claim check: {verification.get('status', 'not_available')}",
+                f"- Claim check reason: {verification.get('reason', 'No claim verification was recorded.')}",
                 "",
             ]
         )

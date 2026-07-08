@@ -19,6 +19,7 @@
           <nav class="side-nav" aria-label="Web sections">
             <a href="/">Review</a>
             <a href="/history">History</a>
+            <a href="/eval">Evaluation</a>
           </nav>
 
           {% if error %}
@@ -113,7 +114,94 @@
 
         <section class="results-panel">
           {% set result = payload or latest %}
-          {% if show_history %}
+          {% if show_eval %}
+            <section class="section-block">
+              <p class="eyebrow">Reliability</p>
+              <h2>Evaluation Dashboard</h2>
+              <div class="eval-grid">
+                <article class="eval-card">
+                  <span>Scoring Benchmarks</span>
+                  <strong>{{ eval_report.scoring.passed }}/{{ eval_report.scoring.cases }}</strong>
+                  <p>{{ (eval_report.scoring.pass_rate * 100) | round(1) }}% pass rate</p>
+                </article>
+                <article class="eval-card">
+                  <span>Retrieval Recall@5</span>
+                  <strong>{{ eval_report.retrieval.recall_at_k }}</strong>
+                  <p>{{ eval_report.retrieval.status | replace("_", " ") }}</p>
+                </article>
+                <article class="eval-card">
+                  <span>MRR / nDCG@5</span>
+                  <strong>{{ eval_report.retrieval.mrr }} / {{ eval_report.retrieval.ndcg_at_k }}</strong>
+                  <p>{{ eval_report.retrieval.queries }} queries</p>
+                </article>
+                <article class="eval-card">
+                  <span>JD Extraction</span>
+                  <strong>{{ (eval_report.jd_extraction.success_rate * 100) | round(1) }}%</strong>
+                  <p>{{ eval_report.jd_extraction.successful }}/{{ eval_report.jd_extraction.runs }} saved runs</p>
+                </article>
+              </div>
+            </section>
+
+            <section class="section-grid">
+              <div class="section-block">
+                <h3>Scoring Failures</h3>
+                {% if eval_report.scoring.failures %}
+                  <div class="history-list">
+                    {% for item in eval_report.scoring.failures %}
+                      <article class="history-item">
+                        <div>
+                          <h3>{{ item.id }}</h3>
+                          <p>score {{ item.score }} expected {{ item.expected_score_min }}-{{ item.expected_score_max }}</p>
+                        </div>
+                        <div class="history-score">
+                          <strong>{{ item.verdict }}</strong>
+                          <span>{{ "score ok" if item.score_ok else "score fail" }} / {{ "verdict ok" if item.verdict_ok else "verdict fail" }}</span>
+                        </div>
+                      </article>
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  <p class="muted">No scoring benchmark failures.</p>
+                {% endif %}
+              </div>
+
+              <div class="section-block">
+                <h3>JD Extraction Methods</h3>
+                {% if eval_report.jd_extraction.methods %}
+                  <div class="diagnostics-grid">
+                    {% for method, count in eval_report.jd_extraction.methods.items() %}
+                      <span>{{ method }}</span>
+                      <strong>{{ count }}</strong>
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  <p class="muted">No saved review runs yet.</p>
+                {% endif %}
+              </div>
+            </section>
+
+            <section class="section-block">
+              <h3>Retrieval Per Query</h3>
+              {% if eval_report.retrieval.per_query %}
+                <div class="history-list">
+                  {% for item in eval_report.retrieval.per_query %}
+                    <article class="history-item">
+                      <div>
+                        <h3>Query {{ loop.index }}</h3>
+                        <p>{{ item.ids | join(", ") }}</p>
+                      </div>
+                      <div class="history-score">
+                        <strong>{{ item.recall }}</strong>
+                        <span>MRR {{ item.mrr | round(3) }} / nDCG {{ item.ndcg | round(3) }}</span>
+                      </div>
+                    </article>
+                  {% endfor %}
+                </div>
+              {% else %}
+                <p class="muted">Retrieval evaluation needs an indexed vector store and benchmark queries.</p>
+              {% endif %}
+            </section>
+          {% elif show_history %}
             <section class="section-block">
               <p class="eyebrow">Saved Runs</p>
               <h2>Review History</h2>
@@ -308,6 +396,45 @@
                   </div>
                 {% endfor %}
               </div>
+              {% if result.score_explanations %}
+                <div class="score-explain-list">
+                  {% for item in result.score_explanations %}
+                    <article class="score-explain">
+                      <div class="breakdown-top">
+                        <strong>{{ item.component | replace("_", " ") | title }}</strong>
+                        <span>{{ item.points }}/{{ item.max_points }}</span>
+                      </div>
+                      <p>{{ item.reason }}</p>
+                      <div class="explain-grid">
+                        <div>
+                          <span>Evidence used</span>
+                          {% if item.evidence %}
+                            <ul class="compact-list">
+                              {% for evidence in item.evidence %}
+                                <li><strong>{{ evidence }}</strong></li>
+                              {% endfor %}
+                            </ul>
+                          {% else %}
+                            <p class="muted">No evidence credited.</p>
+                          {% endif %}
+                        </div>
+                        <div>
+                          <span>Missing or weak</span>
+                          {% if item.missing %}
+                            <ul class="compact-list">
+                              {% for missing in item.missing %}
+                                <li><strong>{{ missing }}</strong></li>
+                              {% endfor %}
+                            </ul>
+                          {% else %}
+                            <p class="muted">No missing evidence for this component.</p>
+                          {% endif %}
+                        </div>
+                      </div>
+                    </article>
+                  {% endfor %}
+                </div>
+              {% endif %}
             </section>
 
             <section class="section-grid">
@@ -353,8 +480,17 @@
                         <span>{{ item.source_category | default("supporting") }}/{{ item.source_path }}</span>
                         <span>chunk {{ item.chunk_index }}</span>
                         <span>confidence {{ item.confidence }}</span>
-                        <span>{{ "safe to claim" if item.safe_to_claim | default(true) else "needs verification" }}</span>
+                        <span>{{ (item.claim_verification.status if item.claim_verification else ("supported" if item.safe_to_claim | default(true) else "needs_verification")) | replace("_", " ") }}</span>
                       </div>
+                      {% if item.claim_verification %}
+                        <div class="claim-box claim-{{ item.claim_verification.status }}">
+                          <strong>Claim check: {{ item.claim_verification.status | replace("_", " ") }}</strong>
+                          <p>{{ item.claim_verification.reason }}</p>
+                          {% if item.claim_verification.required_evidence %}
+                            <span>Required evidence: {{ item.claim_verification.required_evidence | join(", ") }}</span>
+                          {% endif %}
+                        </div>
+                      {% endif %}
                       {% if item.evidence_excerpt %}
                         <blockquote>{{ item.evidence_excerpt }}</blockquote>
                       {% endif %}

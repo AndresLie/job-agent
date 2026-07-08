@@ -34,7 +34,9 @@ The strongest demo path is:
    gaps.
 5. Use the CV Improvement Workspace to copy only grounded bullets, with source
    folder, file, chunk, confidence, and evidence excerpt visible.
-6. Export or rerun after editing the CV to prove the score changes only when
+6. Open the Evaluation page to show scoring benchmark pass rate, retrieval
+   metrics, JD extraction health, and any failure cases.
+7. Export or rerun after editing the CV to prove the score changes only when
    the resume evidence changes.
 
 ## Architecture
@@ -113,6 +115,13 @@ The web flow has two steps for URL-based jobs:
    projects and experience for grounded improvements.
 
 Use the History page to reopen previous review runs from `outputs/runs/`.
+Use the Evaluation page to inspect reliability metrics and failure cases:
+
+- Scoring benchmark pass rate over labeled strong, weak, hidden-evidence, and
+  adversarial cases.
+- Retrieval Recall@5, MRR, and nDCG@5 when a vector store has been indexed.
+- JD extraction success rate and extraction method distribution from saved
+  review runs.
 
 The web UI is designed for local use. It only accepts RAG folders inside the
 project directory and blocks job URLs that resolve to local/private network
@@ -257,6 +266,14 @@ resume/project/experience documents. Safe public examples live under
 - Web review history for opening previous saved runs.
 - JD URL preview with editable extracted text and requirement diagnostics.
 - CV Improvement Workspace with keep/rewrite/add/missing-evidence lanes.
+- Evaluation dashboard for scoring, retrieval, JD extraction, and failure-case
+  visibility.
+- Grounded claim verifier for generated CV bullets, including safe-to-claim
+  status and required evidence warnings.
+- Explainable score breakdown with points, credited evidence, missing evidence,
+  and component-level reasons.
+- Adversarial benchmark cases for shallow keyword resumes, hidden project
+  evidence, weak senior-role evidence, wrong-domain matching, and alias gaps.
 - Separate JD-to-CV scoring from project/experience-based CV recommendations.
 - Role-aware job-fit scoring for data scientist, AI engineer, and ML engineer
   roles.
@@ -309,6 +326,7 @@ object with:
 - `jd_requirements`
 - `evidence_depth`
 - `scoring_breakdown`
+- `score_explanations`
 - `weak_evidence`
 - `cv_jd_review`
 - `cv_match`

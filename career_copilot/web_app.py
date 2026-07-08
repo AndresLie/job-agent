@@ -16,9 +16,11 @@ from .brief import generate_brief
 from .config import load_env_file
 from .documents import chunk_document, discover_documents, load_document
 from .embeddings import build_embedder
+from .evaluate import evaluate_retrieval
 from .job_input import resolve_job_input
 from .memory import MemoryStore
 from .rubric import analyze_job_requirements
+from .score_eval import evaluate_scoring_cases
 from .vector_store import JsonVectorStore
 from .web_research import research_company
 from .wizard import write_json
@@ -56,6 +58,10 @@ def create_app(project_root: Path | None = None) -> FastAPI:
     @app.get("/history", response_class=HTMLResponse)
     def history(request: Request) -> HTMLResponse:
         return render(request, root=root, history=list_review_runs(root), show_history=True)
+
+    @app.get("/eval", response_class=HTMLResponse)
+    def evaluation(request: Request) -> HTMLResponse:
+        return render(request, root=root, eval_report=build_evaluation_report(root), show_eval=True)
 
     @app.get("/history/{run_id}", response_class=HTMLResponse)
     def history_detail(request: Request, run_id: str) -> HTMLResponse:
@@ -401,6 +407,55 @@ def read_review_payload(path: Path) -> dict[str, Any] | None:
     return payload
 
 
+def build_evaluation_report(root: Path) -> dict[str, Any]:
+    scoring_path = root / "benchmarks" / "scoring_cases.jsonl"
+    queries_path = root / "benchmarks" / "queries.jsonl"
+    index_path = root / "storage" / "vector_store.json"
+    report: dict[str, Any] = {
+        "scoring": {"status": "missing", "cases": 0, "passed": 0, "pass_rate": 0.0, "failures": []},
+        "retrieval": {"status": "not_indexed", "queries": 0, "recall_at_k": 0.0, "mrr": 0.0, "ndcg_at_k": 0.0},
+        "jd_extraction": jd_extraction_health(root),
+    }
+    if scoring_path.exists():
+        try:
+            report["scoring"] = {"status": "ok", **evaluate_scoring_cases(scoring_path)}
+        except Exception as exc:
+            report["scoring"] = {"status": "error", "error": str(exc), "cases": 0, "passed": 0, "pass_rate": 0.0, "failures": []}
+    if queries_path.exists() and index_path.exists():
+        store = JsonVectorStore(index_path)
+        if store.records:
+            try:
+                report["retrieval"] = {"status": "ok", **evaluate_retrieval(queries_path, store, build_embedder("hashing"), k=5)}
+            except Exception as exc:
+                report["retrieval"] = {"status": "error", "error": str(exc), "queries": 0, "recall_at_k": 0.0, "mrr": 0.0, "ndcg_at_k": 0.0}
+    return report
+
+
+def jd_extraction_health(root: Path) -> dict[str, Any]:
+    directory = root / "outputs" / "runs"
+    if not directory.exists():
+        return {"runs": 0, "successful": 0, "success_rate": 0.0, "methods": {}}
+    methods: dict[str, int] = {}
+    successful = 0
+    total = 0
+    for path in directory.glob("review-*.json"):
+        payload = read_review_payload(path)
+        if not payload:
+            continue
+        total += 1
+        diagnostics = payload.get("diagnostics") or {}
+        method = diagnostics.get("job_extraction_method") or "unknown"
+        methods[method] = methods.get(method, 0) + 1
+        if method != "unknown" and int(diagnostics.get("job_text_chars") or 0) > 0:
+            successful += 1
+    return {
+        "runs": total,
+        "successful": successful,
+        "success_rate": round(successful / total, 3) if total else 0.0,
+        "methods": methods,
+    }
+
+
 def render(
     request: Request,
     *,
@@ -412,6 +467,8 @@ def render(
     preview: dict[str, Any] | None = None,
     history: list[dict[str, Any]] | None = None,
     show_history: bool = False,
+    eval_report: dict[str, Any] | None = None,
+    show_eval: bool = False,
     status_code: int = 200,
 ) -> HTMLResponse:
     default_form = {
@@ -438,5 +495,7 @@ def render(
         "preview": preview,
         "history": history or [],
         "show_history": show_history,
+        "eval_report": eval_report or {},
+        "show_eval": show_eval,
     }
     return TEMPLATES.TemplateResponse(request, "review.html", context, status_code=status_code)

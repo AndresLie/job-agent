@@ -60,8 +60,10 @@ def test_web_review_with_pasted_jd_returns_result(tmp_path, monkeypatch):
     assert "CV vs JD Review" in response.text
     assert "CV Improvement Workspace" in response.text
     assert "JD Signals" in response.text
+    assert "Evidence used" in response.text
     assert "CV Rewrite Suggestions" in response.text
     assert "data-copy-target" in response.text
+    assert "Claim check" in response.text
     assert "Review Diagnostics" in response.text
     assert (root / "outputs" / "latest_brief.json").exists()
     assert list((root / "outputs" / "runs").glob("review-*.json"))
@@ -209,6 +211,42 @@ def test_web_history_lists_and_loads_review_runs(tmp_path, monkeypatch):
     assert detail.status_code == 200
     assert "Loaded review" in detail.text
     assert "CV vs JD Review" in detail.text
+
+
+def test_web_eval_dashboard_reports_scoring_and_extraction(tmp_path, monkeypatch):
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    root = build_example_root(tmp_path)
+    benchmarks = root / "benchmarks"
+    benchmarks.mkdir()
+    benchmarks.joinpath("scoring_cases.jsonl").write_text(
+        '{"id":"strong","job_text":"AI Engineer Python RAG retrieval evaluation systems.",'
+        '"resume_docs":["Deployed Python RAG retrieval evaluation systems in production and improved coverage by 30%."],'
+        '"expected_score_min":70,"expected_score_max":100,"expected_verdicts":["strong_match","stretch"]}\n',
+        encoding="utf-8",
+    )
+    benchmarks.joinpath("queries.jsonl").write_text(
+        '{"query":"What shows RAG retrieval?","relevant_sources":["projects/rag.md"]}\n',
+        encoding="utf-8",
+    )
+    client = TestClient(create_app(project_root=root))
+    review = client.post(
+        "/review",
+        data={
+            "rag_folder": str(root / "examples"),
+            "rebuild_index": "true",
+            "company": "Example",
+            "job_text": "# AI Engineer\nPython SQL RAG retrieval evaluation machine learning",
+            "job_url": "",
+            "top_k": "8",
+        },
+    )
+    assert review.status_code == 200
+    response = client.get("/eval")
+    assert response.status_code == 200
+    assert "Evaluation Dashboard" in response.text
+    assert "Scoring Benchmarks" in response.text
+    assert "Retrieval Recall@5" in response.text
+    assert "JD Extraction" in response.text
 
 
 def test_web_history_rejects_invalid_run_id(tmp_path, monkeypatch):

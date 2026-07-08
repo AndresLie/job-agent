@@ -61,6 +61,14 @@ def generate_brief(
     fit_score = rubric_result["fit_score"]
     application_verdict = build_application_verdict(fit_score, hidden_terms, gaps, weak_evidence, resume_hits)
     cv_rewrite_suggestions = build_cv_rewrite_suggestions(supporting_hits, hidden_terms)
+    score_explanations = build_score_explanations(
+        requirements=requirements,
+        scoring_breakdown=rubric_result["scoring_breakdown"],
+        evidence_depth=evidence_depth,
+        resume_hits=resume_hits,
+        matched=matched,
+        weak_evidence=weak_evidence,
+    )
     brutal_assessment = build_brutal_assessment(fit_score, matched, hidden_terms, gaps, resume_hits, supporting_hits)
     llm_review = generate_brutal_llm_review(
         job_title=job_title or infer_title(job_text, job_path),
@@ -103,6 +111,7 @@ def generate_brief(
         "jd_requirements": requirements,
         "evidence_depth": evidence_depth,
         "scoring_breakdown": rubric_result["scoring_breakdown"],
+        "score_explanations": score_explanations,
         "weak_evidence": weak_evidence,
         "cv_jd_review": {
             "score": fit_score,
@@ -308,16 +317,19 @@ def build_cv_rewrite_suggestions(hits: list[dict], hidden_terms: list[str]) -> l
         if source_key in seen_sources:
             continue
         seen_sources.add(source_key)
+        bullet = build_cv_bullet(hit, terms)
+        verification = verify_rewrite_claim(hit, terms, bullet)
         suggestions.append(
             {
-                "bullet": build_cv_bullet(hit, terms),
+                "bullet": bullet,
                 "target_terms": terms,
                 "source_category": hit.get("category", "general"),
                 "source_path": hit.get("source_path", hit["filename"]),
                 "chunk_index": hit["chunk_index"],
                 "evidence_excerpt": trim_sentence(re.sub(r"\s+", " ", hit["text"]).strip(), 260),
                 "confidence": rewrite_confidence(hit, terms),
-                "safe_to_claim": True,
+                "safe_to_claim": verification["status"] == "supported",
+                "claim_verification": verification,
             }
         )
         if len(suggestions) == 6:
@@ -341,6 +353,132 @@ def rewrite_confidence(hit: dict, terms: list[str]) -> float:
     score = float(hit.get("score", 0.0))
     term_bonus = min(0.25, len(terms) * 0.05)
     return round(min(0.95, max(0.45, score + term_bonus)), 2)
+
+
+def verify_rewrite_claim(hit: dict, terms: list[str], bullet: str) -> dict:
+    text = re.sub(r"\s+", " ", hit.get("text", "")).casefold()
+    bullet_text = bullet.casefold()
+    supported_terms = [term for term in terms if term in skill_terms(text)]
+    risky_claims = []
+    required_evidence = []
+    risk_markers = {
+        "production": "production deployment evidence",
+        "deployed": "deployment evidence",
+        "users": "user or usage evidence",
+        "%": "measured impact",
+        "improved": "before/after metric",
+        "reduced": "before/after metric",
+        "increased": "before/after metric",
+    }
+    for marker, evidence in risk_markers.items():
+        if marker in bullet_text and marker not in text:
+            risky_claims.append(marker)
+            required_evidence.append(evidence)
+    if not supported_terms:
+        return {
+            "status": "unsupported",
+            "reason": "The suggested bullet does not have direct term support in the retrieved evidence.",
+            "supported_claims": [],
+            "risky_claims": sorted(set(risky_claims)),
+            "required_evidence": sorted(set(required_evidence or ["direct source evidence"])),
+        }
+    if risky_claims:
+        return {
+            "status": "needs_verification",
+            "reason": "Core skills are supported, but impact or deployment language needs explicit evidence before claiming it.",
+            "supported_claims": supported_terms,
+            "risky_claims": sorted(set(risky_claims)),
+            "required_evidence": sorted(set(required_evidence)),
+        }
+    return {
+        "status": "supported",
+        "reason": "The target terms appear in the cited project or experience evidence.",
+        "supported_claims": supported_terms,
+        "risky_claims": [],
+        "required_evidence": [],
+    }
+
+
+def build_score_explanations(
+    *,
+    requirements: dict,
+    scoring_breakdown: dict,
+    evidence_depth: dict,
+    resume_hits: list[dict],
+    matched: list[str],
+    weak_evidence: list[str],
+) -> list[dict]:
+    by_term = evidence_depth.get("by_term", {})
+    required = requirements.get("required", [])
+    preferred = requirements.get("preferred", [])
+    responsibilities = requirements.get("responsibilities", [])
+    credible_required = [
+        term
+        for term in required
+        if by_term.get(term, {}).get("cv_depth") in {"work_or_internship", "production_or_measurable_impact"}
+    ]
+    credible_preferred = [
+        term
+        for term in preferred
+        if by_term.get(term, {}).get("cv_depth") in {"work_or_internship", "production_or_measurable_impact"}
+    ]
+    covered_responsibilities = [
+        term
+        for term in responsibilities
+        if by_term.get(term, {}).get("cv_depth") in {"work_or_internship", "production_or_measurable_impact"}
+    ]
+    impact_evidence = quantified_impact_evidence(resume_hits)
+    return [
+        {
+            "component": "required_skill_coverage",
+            "points": scoring_breakdown.get("required_skill_coverage", 0),
+            "max_points": 45,
+            "evidence": credible_required[:10],
+            "missing": [term for term in required if term not in credible_required][:10],
+            "reason": "Required skills earn full credit only when the current CV has credible evidence, not just project-only evidence.",
+        },
+        {
+            "component": "responsibility_alignment",
+            "points": scoring_breakdown.get("responsibility_alignment", 0),
+            "max_points": 20,
+            "evidence": covered_responsibilities[:10],
+            "missing": [term for term in responsibilities if term not in covered_responsibilities][:10],
+            "reason": "Responsibility alignment checks whether the CV demonstrates the work patterns implied by the JD.",
+        },
+        {
+            "component": "evidence_depth",
+            "points": scoring_breakdown.get("evidence_depth", 0),
+            "max_points": 20,
+            "evidence": matched[:10],
+            "missing": weak_evidence[:10],
+            "reason": "Shallow mentions score lower than internship, work, production, or measured-impact evidence.",
+        },
+        {
+            "component": "quantified_impact",
+            "points": scoring_breakdown.get("quantified_impact", 0),
+            "max_points": 10,
+            "evidence": impact_evidence[:3],
+            "missing": [] if impact_evidence else ["measured impact in the current CV"],
+            "reason": "Impact credit requires a number such as percent improvement, users, rows, requests, time, or similar measurable output.",
+        },
+        {
+            "component": "preferred_coverage",
+            "points": scoring_breakdown.get("preferred_coverage", 0),
+            "max_points": 5,
+            "evidence": credible_preferred[:10],
+            "missing": [term for term in preferred if term not in credible_preferred][:10],
+            "reason": "Preferred requirements can improve the score, but they do not compensate for missing required evidence.",
+        },
+    ]
+
+
+def quantified_impact_evidence(hits: list[dict]) -> list[str]:
+    evidence = []
+    for hit in hits:
+        text = re.sub(r"\s+", " ", hit.get("text", "")).strip()
+        if re.search(r"(\d+%|\$\d+|\d+\s*(users|requests|records|rows|hours|seconds|x|ms)\b)", text.casefold()):
+            evidence.append(trim_sentence(text, 180))
+    return evidence
 
 
 def join_terms(terms: list[str]) -> str:

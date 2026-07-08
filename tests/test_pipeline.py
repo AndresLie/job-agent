@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from career_copilot.answer import answer_query
-from career_copilot.brief import generate_brief
+from career_copilot.brief import generate_brief, verify_rewrite_claim
 from career_copilot.documents import chunk_document
 from career_copilot.embeddings import HashingEmbedder
 from career_copilot.memory import MemoryStore
@@ -39,6 +39,7 @@ def test_generate_brief_has_required_fields(tmp_path):
     brief = generate_brief(job, store, embedder, memory)
     assert brief["job_title"] == "AI Engineer"
     assert brief["matched_evidence"]
+    assert brief["score_explanations"]
     assert brief["diagnostics"]["llm_status"] in {"not_configured", "configured_but_unavailable", "used"}
 
 
@@ -220,5 +221,17 @@ def test_cv_rewrite_suggestions_are_grounded_in_supporting_evidence(tmp_path, mo
     assert suggestion["source_category"] == "experience"
     assert "machine learning evaluation pipelines" in suggestion["evidence_excerpt"]
     assert suggestion["safe_to_claim"] is True
+    assert suggestion["claim_verification"]["status"] == "supported"
     assert isinstance(suggestion["chunk_index"], int)
     assert "Quantify impact if true." in suggestion["bullet"]
+
+
+def test_claim_verifier_flags_unsupported_impact_language():
+    result = verify_rewrite_claim(
+        {"text": "Built a RAG retrieval evaluation prototype."},
+        ["rag", "retrieval", "evaluation"],
+        "Deployed RAG retrieval evaluation to production and improved latency by 30%.",
+    )
+    assert result["status"] == "needs_verification"
+    assert "deployment evidence" in result["required_evidence"]
+    assert "measured impact" in result["required_evidence"]

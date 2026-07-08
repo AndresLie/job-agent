@@ -15,6 +15,7 @@ def test_validate_brief_accepts_valid_payload():
             "quantified_impact": 5,
             "preferred_coverage": 0,
         },
+        "score_explanations": [],
         "weak_evidence": [],
         "cv_jd_review": {
             "score": 80,

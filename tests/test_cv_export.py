@@ -17,6 +17,14 @@ def sample_brief():
                 "chunk_index": 0,
                 "target_terms": ["rag"],
                 "confidence": 0.7,
+                "safe_to_claim": True,
+                "claim_verification": {
+                    "status": "supported",
+                    "reason": "The target terms appear in the cited evidence.",
+                    "supported_claims": ["rag"],
+                    "risky_claims": [],
+                    "required_evidence": [],
+                },
             }
         ],
         "recommended_actions": ["Rewrite the CV."],
@@ -27,6 +35,7 @@ def test_render_cv_rewrite_markdown_contains_safe_claim_flag():
     text = render_cv_rewrite_markdown(sample_brief())
     assert "# CV Rewrite Plan - AI Engineer" in text
     assert "Safe to claim now: yes" in text
+    assert "Claim check: supported" in text
     assert "`projects/rag.md`" in text
 
 
