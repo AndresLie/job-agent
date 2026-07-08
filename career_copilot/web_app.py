@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -50,6 +50,71 @@ def create_app(project_root: Path | None = None) -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request) -> HTMLResponse:
         return render(request, root=root)
+
+    @app.get("/history", response_class=HTMLResponse)
+    def history(request: Request) -> HTMLResponse:
+        return render(request, root=root, history=list_review_runs(root), show_history=True)
+
+    @app.get("/history/{run_id}", response_class=HTMLResponse)
+    def history_detail(request: Request, run_id: str) -> HTMLResponse:
+        try:
+            payload = load_review_run(root, run_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return render(request, root=root, payload=payload, notice=f"Loaded review {run_id}.")
+
+    @app.post("/preview-job", response_class=HTMLResponse)
+    def preview_job(
+        request: Request,
+        rag_folder: str = Form("data/raw"),
+        rebuild_index: bool = Form(True),
+        job_text: str = Form(""),
+        job_url: str = Form(""),
+        company: str = Form(""),
+        research_company_enabled: bool = Form(False),
+        memory_note: str = Form(""),
+        memory_tags: str = Form(""),
+        memory_query: str = Form(""),
+        top_k: int = Form(8),
+    ) -> HTMLResponse:
+        form = {
+            "rag_folder": rag_folder,
+            "rebuild_index": rebuild_index,
+            "job_text": job_text,
+            "job_url": job_url,
+            "company": company,
+            "research_company_enabled": research_company_enabled,
+            "memory_note": memory_note,
+            "memory_tags": memory_tags,
+            "memory_query": memory_query,
+            "top_k": top_k,
+        }
+        try:
+            if not job_url.strip():
+                raise ValueError("Enter a job URL to preview.")
+            job = resolve_job_input(
+                job_url=job_url.strip(),
+                company=company.strip() or None,
+                cache_dir=root / "data" / "raw" / "jobs",
+                cache=True,
+            )
+            form.update(
+                {
+                    "job_text": job.text,
+                    "job_url": "",
+                    "company": job.company or company,
+                }
+            )
+            preview = {
+                "title": job.title,
+                "method": job.extraction_method,
+                "chars": len(job.text),
+                "source_url": job_url.strip(),
+            }
+            notice = "Extracted JD preview. Edit the text if needed, then run review."
+            return render(request, root=root, form=form, preview=preview, notice=notice)
+        except Exception as exc:
+            return render(request, root=root, error=str(exc), form=form, status_code=400)
 
     @app.post("/review", response_class=HTMLResponse)
     def review(
@@ -262,6 +327,54 @@ def load_latest(root: Path) -> dict[str, Any] | None:
     return payload
 
 
+def list_review_runs(root: Path) -> list[dict[str, Any]]:
+    runs = []
+    directory = root / "outputs" / "runs"
+    if not directory.exists():
+        return runs
+    for path in sorted(directory.glob("review-*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        payload = read_review_payload(path)
+        if not payload:
+            continue
+        verdict = payload.get("application_verdict") or {}
+        diagnostics = payload.get("diagnostics") or {}
+        runs.append(
+            {
+                "run_id": path.name,
+                "job_title": payload.get("job_title", "Untitled"),
+                "role_family": payload.get("role_family", "unknown"),
+                "fit_score": payload.get("fit_score", "n/a"),
+                "verdict": verdict.get("label", "unknown"),
+                "extraction_method": diagnostics.get("job_extraction_method", "unknown"),
+                "modified_at": datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+            }
+        )
+    return runs
+
+
+def load_review_run(root: Path, run_id: str) -> dict[str, Any]:
+    if Path(run_id).name != run_id:
+        raise ValueError("Invalid review id.")
+    path = (root / "outputs" / "runs" / run_id).resolve()
+    runs_root = (root / "outputs" / "runs").resolve()
+    if not is_relative_to(path, runs_root) or not path.name.startswith("review-") or path.suffix != ".json":
+        raise ValueError("Invalid review id.")
+    payload = read_review_payload(path)
+    if not payload:
+        raise ValueError("Review not found.")
+    return payload
+
+
+def read_review_payload(path: Path) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    if not isinstance(payload, dict) or "cv_jd_review" not in payload or "diagnostics" not in payload:
+        return None
+    return payload
+
+
 def render(
     request: Request,
     *,
@@ -270,6 +383,9 @@ def render(
     error: str | None = None,
     notice: str | None = None,
     form: dict[str, Any] | None = None,
+    preview: dict[str, Any] | None = None,
+    history: list[dict[str, Any]] | None = None,
+    show_history: bool = False,
     status_code: int = 200,
 ) -> HTMLResponse:
     default_form = {
@@ -293,5 +409,8 @@ def render(
         "error": error,
         "notice": notice,
         "latest": payload or load_latest(root),
+        "preview": preview,
+        "history": history or [],
+        "show_history": show_history,
     }
     return TEMPLATES.TemplateResponse(request, "review.html", context, status_code=status_code)

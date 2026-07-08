@@ -4,25 +4,31 @@
     return;
   }
 
-  form.addEventListener("submit", function () {
+  form.addEventListener("submit", function (event) {
     document.querySelectorAll("[data-alert='error']").forEach(function (alert) {
       alert.remove();
     });
 
-    const button = form.querySelector("[data-submit-button]");
-    const label = form.querySelector("[data-submit-label]");
+    const submitter = event.submitter || form.querySelector("[data-submit-button]");
+    const label = submitter ? submitter.querySelector("[data-submit-label]") : null;
     const status = form.querySelector("[data-submit-status]");
+    const statusLabel = form.querySelector("[data-submit-status-label]");
 
-    if (button) {
+    form.querySelectorAll("[data-submit-button]").forEach(function (button) {
       button.disabled = true;
-      button.classList.add("is-loading");
       button.setAttribute("aria-busy", "true");
+    });
+    if (submitter) {
+      submitter.classList.add("is-loading");
     }
     if (label) {
-      label.textContent = "Running...";
+      label.textContent = submitter.getAttribute("data-loading-label") || "Running...";
     }
     if (status) {
       status.hidden = false;
+    }
+    if (statusLabel && submitter) {
+      statusLabel.textContent = submitter.getAttribute("data-status-label") || "Running...";
     }
   });
 })();

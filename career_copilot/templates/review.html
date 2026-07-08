@@ -16,6 +16,10 @@
               <p>Local CV review for AI and data roles</p>
             </div>
           </div>
+          <nav class="side-nav" aria-label="Web sections">
+            <a href="/">Review</a>
+            <a href="/history">History</a>
+          </nav>
 
           {% if error %}
             <div class="alert alert-error" data-alert="error">{{ error }}</div>
@@ -44,6 +48,14 @@
               <span>Job URL</span>
               <input name="job_url" value="{{ form.job_url }}" placeholder="https://company.com/careers/job">
             </label>
+
+            {% if preview %}
+              <div class="preview-box">
+                <p class="eyebrow">JD Preview</p>
+                <strong>{{ preview.title }}</strong>
+                <span>{{ preview.method }} - {{ preview.chars }} chars</span>
+              </div>
+            {% endif %}
 
             <label>
               <span>Job description</span>
@@ -76,20 +88,49 @@
               </label>
             </div>
 
-            <button type="submit" data-submit-button>
-              <span class="button-spinner" aria-hidden="true"></span>
-              <span data-submit-label>Run Review</span>
-            </button>
+            <div class="button-row">
+              <button type="submit" formaction="/preview-job" data-submit-button data-loading-label="Previewing..." data-status-label="Extracting JD preview...">
+                <span class="button-spinner" aria-hidden="true"></span>
+                <span data-submit-label>Preview URL</span>
+              </button>
+              <button type="submit" data-submit-button data-loading-label="Running..." data-status-label="Running review...">
+                <span class="button-spinner" aria-hidden="true"></span>
+                <span data-submit-label>Run Review</span>
+              </button>
+            </div>
             <div class="submit-status" role="status" aria-live="polite" hidden data-submit-status>
               <span class="progress-spinner" aria-hidden="true"></span>
-              <span>Running review...</span>
+              <span data-submit-status-label>Running review...</span>
             </div>
           </form>
         </aside>
 
         <section class="results-panel">
           {% set result = payload or latest %}
-          {% if result %}
+          {% if show_history %}
+            <section class="section-block">
+              <p class="eyebrow">Saved Runs</p>
+              <h2>Review History</h2>
+              {% if history %}
+                <div class="history-list">
+                  {% for item in history %}
+                    <article class="history-item">
+                      <div>
+                        <h3><a href="/history/{{ item.run_id }}">{{ item.job_title }}</a></h3>
+                        <p>{{ item.role_family }} - {{ item.verdict | replace("_", " ") }} - {{ item.extraction_method }}</p>
+                      </div>
+                      <div class="history-score">
+                        <strong>{{ item.fit_score }}</strong>
+                        <span>{{ item.modified_at }}</span>
+                      </div>
+                    </article>
+                  {% endfor %}
+                </div>
+              {% else %}
+                <p class="muted">No saved review runs found yet.</p>
+              {% endif %}
+            </section>
+          {% elif result %}
             <header class="result-header">
               <div>
                 <p class="eyebrow">{{ result.role_family | default("general_ai_data") }}</p>

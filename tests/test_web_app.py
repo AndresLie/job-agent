@@ -142,3 +142,72 @@ def test_web_review_can_save_and_recall_memory(tmp_path, monkeypatch):
     assert response.status_code == 200
     assert "Memory saved." in response.text
     assert "I prefer backend AI roles" in response.text
+
+
+def test_web_preview_job_url_populates_editable_jd(tmp_path, monkeypatch):
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    root = build_example_root(tmp_path)
+    client = TestClient(create_app(project_root=root))
+
+    from career_copilot import web_app
+
+    class Job:
+        source_type = "url"
+        text = "Previewed JD with Python SQL Docker."
+        title = "Preview Role"
+        company = "Example"
+        url = "https://example.com/job"
+        cached_path = None
+        extraction_method = "json_ld"
+
+    monkeypatch.setattr(web_app, "resolve_job_input", lambda **kwargs: Job())
+    response = client.post(
+        "/preview-job",
+        data={
+            "rag_folder": str(root / "examples"),
+            "rebuild_index": "true",
+            "company": "Example",
+            "job_url": "https://example.com/job",
+            "job_text": "",
+            "top_k": "8",
+        },
+    )
+    assert response.status_code == 200
+    assert "JD Preview" in response.text
+    assert "json_ld" in response.text
+    assert "Previewed JD with Python SQL Docker." in response.text
+
+
+def test_web_history_lists_and_loads_review_runs(tmp_path, monkeypatch):
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    root = build_example_root(tmp_path)
+    client = TestClient(create_app(project_root=root))
+    review = client.post(
+        "/review",
+        data={
+            "rag_folder": str(root / "examples"),
+            "rebuild_index": "true",
+            "company": "Example",
+            "job_text": "# AI Engineer\nPython SQL RAG retrieval evaluation",
+            "job_url": "",
+            "top_k": "8",
+        },
+    )
+    assert review.status_code == 200
+    history = client.get("/history")
+    assert history.status_code == 200
+    assert "Review History" in history.text
+    assert "AI Engineer" in history.text
+    run_id = next((root / "outputs" / "runs").glob("review-*.json")).name
+    detail = client.get(f"/history/{run_id}")
+    assert detail.status_code == 200
+    assert "Loaded review" in detail.text
+    assert "CV vs JD Review" in detail.text
+
+
+def test_web_history_rejects_invalid_run_id(tmp_path, monkeypatch):
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    root = build_example_root(tmp_path)
+    client = TestClient(create_app(project_root=root))
+    response = client.get("/history/../latest_brief.json")
+    assert response.status_code == 404
