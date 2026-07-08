@@ -25,12 +25,14 @@ DEPTH_POINTS = {
 }
 
 SKILL_ALIASES = {
-    "ab_test": {"a/b", "ab test", "a b test", "experiment", "experimentation"},
+    "ab_test": {"a/b", "ab test", "a b test", "experiment", "experiments", "experimentation"},
     "agent": {"agent", "agents", "agentic"},
     "airflow": {"airflow"},
     "api": {"api", "apis", "fastapi", "flask"},
     "aws": {"aws", "s3", "lambda", "ec2"},
     "causal": {"causal", "causality", "causal inference"},
+    "csharp": {"c#", "c sharp", "csharp"},
+    "cpp": {"c++", "cpp"},
     "dashboard": {"dashboard", "dashboards", "bi", "tableau", "power bi", "looker"},
     "deep_learning": {"deep learning", "neural", "transformer", "cnn", "rnn"},
     "deployment": {"deploy", "deployed", "deployment", "serving", "inference"},
@@ -39,22 +41,34 @@ SKILL_ALIASES = {
     "evaluation": {"evaluation", "evaluate", "eval", "benchmark", "metrics"},
     "forecasting": {"forecast", "forecasting", "time series"},
     "guardrails": {"guardrail", "guardrails", "safety"},
+    "incident_management": {"incident", "incident management", "problem management", "itsm", "servicenow"},
     "kubernetes": {"kubernetes", "k8s"},
+    "linux": {"linux"},
     "llm": {"llm", "llms", "large language model", "large language models", "gemma", "gpt"},
     "machine_learning": {"machine learning", "ml", "modeling", "model", "models"},
+    "mes": {"mes", "manufacturing execution system", "manufacturing execution systems"},
+    "monitoring": {"monitoring", "alerting", "logging", "splunk"},
     "mlops": {"mlops", "ci cd", "monitoring", "model registry"},
+    "oracle": {"oracle"},
     "pandas": {"pandas", "dataframe", "dataframes"},
+    "perl": {"perl"},
+    "pl_sql": {"pl/sql", "pl sql"},
     "prompting": {"prompt", "prompting", "prompt engineering"},
+    "production_support": {"production support", "technical support", "support software", "support software systems", "on-call", "on call"},
     "python": {"python"},
     "pytorch": {"pytorch", "torch"},
     "rag": {"rag", "retrieval augmented generation"},
+    "release_testing": {"release testing", "testing of new software releases", "software releases"},
     "retrieval": {"retrieval", "retrieve", "search"},
     "sklearn": {"sklearn", "scikit", "scikit learn"},
     "spark": {"spark", "pyspark"},
-    "sql": {"sql", "postgres", "postgresql", "mysql", "sqlite", "bigquery"},
+    "sql": {"sql", "microsoft sql", "ms sql", "postgres", "postgresql", "mysql", "sqlite", "bigquery"},
     "statistics": {"statistics", "statistical", "stats", "probability"},
     "tensorflow": {"tensorflow", "keras"},
+    "troubleshooting": {"troubleshoot", "troubleshooting", "debugging", "problem identification", "problem resolution"},
+    "unix": {"unix"},
     "vector_search": {"vector search", "vector database", "vector store", "faiss", "pinecone", "qdrant"},
+    "windows": {"windows", "windows server"},
 }
 
 ROLE_HINTS = {
@@ -71,6 +85,33 @@ ROLE_HINTS = {
     },
     "ai_engineer": {"ai engineer", "genai", "generative ai", "rag", "llm", "agent", "prompt"},
     "ml_engineer": {"ml engineer", "machine learning engineer", "deployment", "mlops", "serving", "kubernetes"},
+    "manufacturing_it": {
+        "manufacturing it",
+        "mes",
+        "manufacturing execution",
+        "semiconductor manufacturing",
+        "fabs",
+        "fab",
+        "incident management",
+        "problem management",
+        "production support",
+        "technical support",
+        "microsoft sql",
+        "oracle",
+        "c#",
+        "c++",
+        "perl",
+    },
+    "software_engineer": {
+        "software engineer",
+        "software systems",
+        "software applications",
+        "programming",
+        "scripting",
+        "database technologies",
+        "linux",
+        "windows",
+    },
 }
 
 RESPONSIBILITY_ALIASES = {
@@ -79,6 +120,8 @@ RESPONSIBILITY_ALIASES = {
     "deploy_systems": {"deploy", "deployment", "production", "serving", "api"},
     "analyze_data": {"analyze", "analysis", "insight", "analytics", "dashboard"},
     "communicate_results": {"communicate", "stakeholder", "present", "report"},
+    "support_systems": {"support", "technical support", "production support", "incident", "problem management", "troubleshoot"},
+    "test_releases": {"testing of new software releases", "software releases", "release testing"},
 }
 
 PREFERRED_MARKERS = {"preferred", "nice to have", "bonus", "plus", "familiarity"}
@@ -152,6 +195,44 @@ ROLE_TERM_WEIGHTS = {
         "evaluation": 1.0,
         "dashboard": 0.3,
         "prompting": 0.35,
+    },
+    "manufacturing_it": {
+        "mes": 1.35,
+        "sql": 1.2,
+        "oracle": 1.1,
+        "pl_sql": 1.05,
+        "csharp": 1.15,
+        "cpp": 1.15,
+        "perl": 1.0,
+        "linux": 1.0,
+        "unix": 1.0,
+        "windows": 1.0,
+        "incident_management": 1.2,
+        "production_support": 1.25,
+        "troubleshooting": 1.2,
+        "release_testing": 0.95,
+        "monitoring": 0.95,
+        "deployment": 0.95,
+        "api": 0.85,
+        "python": 0.75,
+        "rag": 0.2,
+        "llm": 0.2,
+        "aws": 0.35,
+        "dashboard": 0.45,
+    },
+    "software_engineer": {
+        "api": 1.1,
+        "deployment": 1.0,
+        "sql": 1.0,
+        "csharp": 1.0,
+        "cpp": 1.0,
+        "python": 0.95,
+        "linux": 0.9,
+        "windows": 0.85,
+        "troubleshooting": 0.95,
+        "production_support": 0.9,
+        "rag": 0.35,
+        "dashboard": 0.45,
     },
     "general_ai_data": {},
 }
@@ -278,7 +359,7 @@ def known_skill_terms() -> set[str]:
 
 def detect_role_family(text: str) -> str:
     scores = {
-        role: sum(1 for hint in hints if hint in text)
+        role: sum(1 for hint in hints if phrase_in_text(hint, text))
         for role, hints in ROLE_HINTS.items()
     }
     best_role, best_score = max(scores.items(), key=lambda item: item[1])
@@ -376,7 +457,7 @@ def has_required_marker_near_term(text: str, term: str) -> bool:
     aliases = SKILL_ALIASES.get(term, {term})
     sentences = split_sentences(text)
     for sentence in sentences:
-        if any(alias in sentence for alias in aliases) and any(marker in sentence for marker in {"required", "must", "need", "experience with"}):
+        if any(phrase_in_text(alias, sentence) for alias in aliases) and any(marker in sentence for marker in {"required", "must", "need", "experience with"}):
             return True
     return False
 
@@ -385,7 +466,7 @@ def extract_skills(text: str) -> set[str]:
     found = set()
     token_set = keyword_tokens(text)
     for skill, aliases in SKILL_ALIASES.items():
-        if skill in token_set or any(alias in text for alias in aliases):
+        if skill in token_set or any(phrase_in_text(alias, text) for alias in aliases):
             found.add(skill)
     return found
 
@@ -402,7 +483,7 @@ def extract_preferred_skills(text: str, skills: Iterable[str]) -> set[str]:
 def extract_responsibilities(text: str) -> set[str]:
     found = set()
     for responsibility, aliases in RESPONSIBILITY_ALIASES.items():
-        if any(alias in text for alias in aliases):
+        if any(phrase_in_text(alias, text) for alias in aliases):
             found.add(responsibility)
     return found
 
@@ -424,7 +505,7 @@ def extract_responsibilities_by_section(sections: list[dict]) -> set[str]:
 
 def role_action_is_explicit(text: str, responsibility: str) -> bool:
     aliases = RESPONSIBILITY_ALIASES.get(responsibility, {responsibility})
-    return any(alias in text for alias in aliases) and any(marker in text for marker in {"you will", "responsible", "build", "develop", "deploy", "analyze", "communicate"})
+    return any(phrase_in_text(alias, text) for alias in aliases) and any(marker in text for marker in {"you will", "responsible", "build", "develop", "deploy", "analyze", "communicate", "support", "troubleshoot"})
 
 
 def best_depth_for_term(term: str, hits: list[dict]) -> str:
@@ -440,9 +521,9 @@ def best_depth_for_term(term: str, hits: list[dict]) -> str:
 
 
 def classify_depth(text: str, category: str) -> str:
-    if has_quantified_impact(text) or "production" in text or "users" in text or "deployed" in text:
+    if has_quantified_impact(text) or any(phrase_in_text(marker, text) for marker in {"production", "users", "deployed"}):
         return "production_or_measurable_impact"
-    if category == "experience" or any(word in text for word in {"internship", "intern", "work", "worked", "company"}):
+    if category == "experience" or any(phrase_in_text(word, text) for word in {"internship", "intern", "work", "worked", "company"}):
         return "work_or_internship"
     if category == "projects":
         if any(word in text for word in {"course", "class", "homework", "assignment"}):
@@ -457,7 +538,7 @@ def has_quantified_impact(text: str) -> bool:
 
 def term_in_text(term: str, text: str) -> bool:
     aliases = SKILL_ALIASES.get(term) or RESPONSIBILITY_ALIASES.get(term) or {term}
-    return term in keyword_tokens(text) or any(alias in text for alias in aliases)
+    return term in keyword_tokens(text) or any(phrase_in_text(alias, text) for alias in aliases)
 
 
 def covered_terms(terms: Iterable[str], by_term: dict) -> set[str]:
@@ -528,3 +609,12 @@ def split_sentences(text: str) -> list[str]:
 
 def normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text.casefold()).strip()
+
+
+def phrase_in_text(phrase: str, text: str) -> bool:
+    normalized_phrase = normalize(phrase)
+    normalized_text = normalize(text)
+    if not normalized_phrase:
+        return False
+    pattern = r"(?<![a-z0-9])" + re.escape(normalized_phrase).replace(r"\ ", r"\s+") + r"(?![a-z0-9])"
+    return bool(re.search(pattern, normalized_text))
