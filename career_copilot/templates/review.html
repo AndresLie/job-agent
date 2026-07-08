@@ -53,7 +53,13 @@
               <div class="preview-box">
                 <p class="eyebrow">JD Preview</p>
                 <strong>{{ preview.title }}</strong>
-                <span>{{ preview.method }} - {{ preview.chars }} chars</span>
+                <span>{{ preview.company or "Company not detected" }} - {{ preview.location }} - {{ preview.method }} - {{ preview.chars }} chars</span>
+                <div class="preview-diagnostics">
+                  <span>Role: <strong>{{ preview.role_family | replace("_", " ") }}</strong></span>
+                  <span>Required: <strong>{{ preview.required | join(", ") if preview.required else "none detected" }}</strong></span>
+                  <span>Preferred: <strong>{{ preview.preferred | join(", ") if preview.preferred else "none detected" }}</strong></span>
+                  <span>Responsibilities: <strong>{{ preview.responsibilities | join(", ") if preview.responsibilities else "none detected" }}</strong></span>
+                </div>
               </div>
             {% endif %}
 
@@ -183,6 +189,112 @@
               <span class="risk">{{ result.application_verdict.risk_level | title }} risk</span>
             </section>
 
+            <section class="section-block workspace-section">
+              <p class="eyebrow">Workspace</p>
+              <h3>CV Improvement Workspace</h3>
+              <div class="workspace-grid">
+                <div class="workspace-column">
+                  <h4>Keep</h4>
+                  {% if result.matched_evidence %}
+                    <ul class="compact-list">
+                      {% for item in result.matched_evidence[:3] %}
+                        <li>
+                          <strong>{{ item.source_path or item.source }}</strong>
+                          <span>{{ item.matched_terms | join(", ") if item.matched_terms else "supporting CV evidence" }}</span>
+                        </li>
+                      {% endfor %}
+                    </ul>
+                  {% else %}
+                    <p class="muted">No CV evidence is strong enough to preserve yet.</p>
+                  {% endif %}
+                </div>
+
+                <div class="workspace-column">
+                  <h4>Rewrite</h4>
+                  {% if result.weak_evidence %}
+                    <ul class="compact-list">
+                      {% for item in result.weak_evidence[:6] %}
+                        <li><strong>{{ item }}</strong><span>present too weakly in the current CV</span></li>
+                      {% endfor %}
+                    </ul>
+                  {% else %}
+                    <p class="muted">No weak CV evidence flagged by the rubric.</p>
+                  {% endif %}
+                </div>
+
+                <div class="workspace-column">
+                  <h4>Add From Evidence</h4>
+                  {% if result.cv_rewrite_suggestions %}
+                    <ul class="compact-list">
+                      {% for item in result.cv_rewrite_suggestions[:4] %}
+                        <li>
+                          <strong>{{ item.target_terms | join(", ") }}</strong>
+                          <span>{{ item.source_category | default("supporting") }}/{{ item.source_path }} chunk {{ item.chunk_index }}</span>
+                        </li>
+                      {% endfor %}
+                    </ul>
+                  {% else %}
+                    <p class="muted">No project or experience evidence is available to add.</p>
+                  {% endif %}
+                </div>
+
+                <div class="workspace-column">
+                  <h4>Missing Evidence</h4>
+                  {% if result.skill_gaps %}
+                    <ul class="compact-list">
+                      {% for item in result.skill_gaps[:6] %}
+                        <li><strong>{{ item }}</strong><span>not found in CV, projects, or experience</span></li>
+                      {% endfor %}
+                    </ul>
+                  {% else %}
+                    <p class="muted">No uncovered required skills remain.</p>
+                  {% endif %}
+                </div>
+              </div>
+            </section>
+
+            <section class="section-block">
+              <h3>JD Signals</h3>
+              <div class="signal-grid">
+                <div>
+                  <strong>Required</strong>
+                  {% if result.jd_requirements.required %}
+                    <ul class="tag-list">
+                      {% for item in result.jd_requirements.required %}
+                        <li>{{ item }}</li>
+                      {% endfor %}
+                    </ul>
+                  {% else %}
+                    <p class="muted">No required skills detected.</p>
+                  {% endif %}
+                </div>
+                <div>
+                  <strong>Preferred</strong>
+                  {% if result.jd_requirements.preferred %}
+                    <ul class="tag-list">
+                      {% for item in result.jd_requirements.preferred %}
+                        <li>{{ item }}</li>
+                      {% endfor %}
+                    </ul>
+                  {% else %}
+                    <p class="muted">No preferred skills detected.</p>
+                  {% endif %}
+                </div>
+                <div>
+                  <strong>Responsibilities</strong>
+                  {% if result.jd_requirements.responsibilities %}
+                    <ul class="tag-list">
+                      {% for item in result.jd_requirements.responsibilities %}
+                        <li>{{ item }}</li>
+                      {% endfor %}
+                    </ul>
+                  {% else %}
+                    <p class="muted">No responsibilities detected.</p>
+                  {% endif %}
+                </div>
+              </div>
+            </section>
+
             <section class="section-block">
               <h3>Scoring Breakdown</h3>
               <div class="breakdown-list">
@@ -233,8 +345,19 @@
                 <div class="suggestion-list">
                   {% for item in result.cv_rewrite_suggestions %}
                     <article class="suggestion">
-                      <p>{{ item.bullet }}</p>
-                      <footer>{{ item.source_path }} - chunk {{ item.chunk_index }} - confidence {{ item.confidence }}</footer>
+                      <div class="suggestion-top">
+                        <p id="rewrite-{{ loop.index }}">{{ item.bullet }}</p>
+                        <button type="button" class="copy-button" data-copy-target="rewrite-{{ loop.index }}">Copy</button>
+                      </div>
+                      <div class="evidence-trace">
+                        <span>{{ item.source_category | default("supporting") }}/{{ item.source_path }}</span>
+                        <span>chunk {{ item.chunk_index }}</span>
+                        <span>confidence {{ item.confidence }}</span>
+                        <span>{{ "safe to claim" if item.safe_to_claim | default(true) else "needs verification" }}</span>
+                      </div>
+                      {% if item.evidence_excerpt %}
+                        <blockquote>{{ item.evidence_excerpt }}</blockquote>
+                      {% endif %}
                     </article>
                   {% endfor %}
                 </div>

@@ -14,6 +14,52 @@ The default path uses a local hashing embedder, so the demo runs without API
 keys or model downloads. NVIDIA-hosted NIM chat and sentence-transformer
 retrieval are optional when configured.
 
+## Portfolio Story
+
+This project is designed to show an end-to-end AI/data product, not just a
+chatbot wrapper. The system first scores the current CV against the JD only,
+then separately searches project and experience evidence to recommend honest
+CV improvements. That separation is intentional: project notes can justify a
+rewrite, but they should not inflate the score of a CV that does not currently
+say the right things.
+
+The strongest demo path is:
+
+1. Put private evidence under `data/raw/resume/`, `data/raw/projects/`, and
+   `data/raw/experience/`.
+2. Start the web UI and paste a JD or preview a job URL.
+3. Show the JD diagnostics: extracted role family, required skills, preferred
+   skills, and responsibilities.
+4. Run the review and explain the score, verdict, weak evidence, and skill
+   gaps.
+5. Use the CV Improvement Workspace to copy only grounded bullets, with source
+   folder, file, chunk, confidence, and evidence excerpt visible.
+6. Export or rerun after editing the CV to prove the score changes only when
+   the resume evidence changes.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    A[Resume PDFs and Markdown] --> B[Document ingestion]
+    C[Project notes] --> B
+    D[Experience notes] --> B
+    B --> E[Chunking and citation metadata]
+    E --> F[Local vector store]
+    G[JD text or job URL] --> H[JD extraction and preview]
+    H --> I[Requirement parser]
+    F --> J[CV-only retrieval]
+    F --> K[Project and experience retrieval]
+    I --> L[Deterministic scoring rubric]
+    J --> L
+    K --> M[Grounded CV rewrite suggestions]
+    N[Memory store] --> O[Preference recall]
+    L --> P[Validated JSON brief]
+    M --> P
+    O --> P
+    P --> Q[Web review history and exportable artifacts]
+```
+
 ## Quickstart
 
 ```bash
@@ -58,6 +104,15 @@ python -m career_copilot serve --host 127.0.0.1 --port 8000
 
 Open `http://127.0.0.1:8000`, choose a RAG folder, paste a JD or enter a job
 URL, then run the review.
+
+The web flow has two steps for URL-based jobs:
+
+1. `Preview URL` extracts the JD and shows editable text plus detected
+   requirements.
+2. `Run Review` compares the edited JD against the indexed CV, then mines
+   projects and experience for grounded improvements.
+
+Use the History page to reopen previous review runs from `outputs/runs/`.
 
 The web UI is designed for local use. It only accepts RAG folders inside the
 project directory and blocks job URLs that resolve to local/private network
@@ -199,6 +254,9 @@ resume/project/experience documents. Safe public examples live under
 - Retrieval scoring with semantic hashing plus lexical reranking.
 - Persistent memory with deterministic BM25 retrieval.
 - Web memory controls for saving and recalling career preferences.
+- Web review history for opening previous saved runs.
+- JD URL preview with editable extracted text and requirement diagnostics.
+- CV Improvement Workspace with keep/rewrite/add/missing-evidence lanes.
 - Separate JD-to-CV scoring from project/experience-based CV recommendations.
 - Role-aware job-fit scoring for data scientist, AI engineer, and ML engineer
   roles.

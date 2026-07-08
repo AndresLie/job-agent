@@ -8,7 +8,7 @@ from .contracts import validate_brief, write_json_contract
 from .documents import clean_text
 from .embeddings import Embedder
 from .memory import MemoryStore
-from .rubric import analyze_evidence_depth, analyze_job_requirements, known_skill_terms, score_with_rubric
+from .rubric import analyze_evidence_depth, analyze_job_requirements, extract_skills, known_skill_terms, score_with_rubric
 from .vector_store import JsonVectorStore, keyword_tokens
 
 
@@ -156,7 +156,9 @@ def is_skill_like(term: str) -> bool:
 
 
 def skill_terms(text: str) -> set[str]:
-    terms = {term for term in keyword_tokens(text) if is_skill_like(term)}
+    normalized = re.sub(r"\s+", " ", text.casefold()).strip()
+    terms = set(extract_skills(normalized))
+    terms |= {term for term in keyword_tokens(text) if is_skill_like(term)}
     return terms or keyword_tokens(text)
 
 
@@ -310,9 +312,12 @@ def build_cv_rewrite_suggestions(hits: list[dict], hidden_terms: list[str]) -> l
             {
                 "bullet": build_cv_bullet(hit, terms),
                 "target_terms": terms,
+                "source_category": hit.get("category", "general"),
                 "source_path": hit.get("source_path", hit["filename"]),
                 "chunk_index": hit["chunk_index"],
+                "evidence_excerpt": trim_sentence(re.sub(r"\s+", " ", hit["text"]).strip(), 260),
                 "confidence": rewrite_confidence(hit, terms),
+                "safe_to_claim": True,
             }
         )
         if len(suggestions) == 6:

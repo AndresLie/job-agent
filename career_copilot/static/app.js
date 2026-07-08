@@ -31,4 +31,21 @@
       statusLabel.textContent = submitter.getAttribute("data-status-label") || "Running...";
     }
   });
+
+  document.querySelectorAll("[data-copy-target]").forEach(function (button) {
+    button.addEventListener("click", function () {
+      const target = document.getElementById(button.getAttribute("data-copy-target"));
+      const text = target ? target.textContent.trim() : "";
+      if (!text || !navigator.clipboard) {
+        return;
+      }
+      navigator.clipboard.writeText(text).then(function () {
+        const original = button.textContent;
+        button.textContent = "Copied";
+        window.setTimeout(function () {
+          button.textContent = original;
+        }, 1400);
+      });
+    });
+  });
 })();

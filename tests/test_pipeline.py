@@ -217,5 +217,8 @@ def test_cv_rewrite_suggestions_are_grounded_in_supporting_evidence(tmp_path, mo
     assert brief["cv_rewrite_suggestions"]
     suggestion = brief["cv_rewrite_suggestions"][0]
     assert suggestion["source_path"].startswith("experience/")
+    assert suggestion["source_category"] == "experience"
+    assert "machine learning evaluation pipelines" in suggestion["evidence_excerpt"]
+    assert suggestion["safe_to_claim"] is True
     assert isinstance(suggestion["chunk_index"], int)
     assert "Quantify impact if true." in suggestion["bullet"]

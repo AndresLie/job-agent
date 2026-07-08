@@ -50,7 +50,7 @@ def test_web_review_with_pasted_jd_returns_result(tmp_path, monkeypatch):
             "rag_folder": str(root / "examples"),
             "rebuild_index": "true",
             "company": "Example",
-            "job_text": "# AI Engineer\nPython SQL RAG retrieval evaluation",
+            "job_text": "# AI Engineer\nPython SQL RAG retrieval evaluation machine learning",
             "job_url": "",
             "top_k": "8",
         },
@@ -58,7 +58,10 @@ def test_web_review_with_pasted_jd_returns_result(tmp_path, monkeypatch):
     assert response.status_code == 200
     assert "Fit score" in response.text
     assert "CV vs JD Review" in response.text
+    assert "CV Improvement Workspace" in response.text
+    assert "JD Signals" in response.text
     assert "CV Rewrite Suggestions" in response.text
+    assert "data-copy-target" in response.text
     assert "Review Diagnostics" in response.text
     assert (root / "outputs" / "latest_brief.json").exists()
     assert list((root / "outputs" / "runs").glob("review-*.json"))
@@ -153,7 +156,7 @@ def test_web_preview_job_url_populates_editable_jd(tmp_path, monkeypatch):
 
     class Job:
         source_type = "url"
-        text = "Previewed JD with Python SQL Docker."
+        text = "Previewed JD with Python SQL Docker. Location: Taipei. Preferred: RAG."
         title = "Preview Role"
         company = "Example"
         url = "https://example.com/job"
@@ -176,6 +179,9 @@ def test_web_preview_job_url_populates_editable_jd(tmp_path, monkeypatch):
     assert "JD Preview" in response.text
     assert "json_ld" in response.text
     assert "Previewed JD with Python SQL Docker." in response.text
+    assert "Required:" in response.text
+    assert "docker" in response.text
+    assert "Preferred:" in response.text
 
 
 def test_web_history_lists_and_loads_review_runs(tmp_path, monkeypatch):

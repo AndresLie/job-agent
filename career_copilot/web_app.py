@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,6 +18,7 @@ from .documents import chunk_document, discover_documents, load_document
 from .embeddings import build_embedder
 from .job_input import resolve_job_input
 from .memory import MemoryStore
+from .rubric import analyze_job_requirements
 from .vector_store import JsonVectorStore
 from .web_research import research_company
 from .wizard import write_json
@@ -105,12 +107,7 @@ def create_app(project_root: Path | None = None) -> FastAPI:
                     "company": job.company or company,
                 }
             )
-            preview = {
-                "title": job.title,
-                "method": job.extraction_method,
-                "chars": len(job.text),
-                "source_url": job_url.strip(),
-            }
+            preview = build_job_preview(job, job_url.strip())
             notice = "Extracted JD preview. Edit the text if needed, then run review."
             return render(request, root=root, form=form, preview=preview, notice=notice)
         except Exception as exc:
@@ -325,6 +322,35 @@ def load_latest(root: Path) -> dict[str, Any] | None:
     if not isinstance(payload, dict) or "cv_jd_review" not in payload or "diagnostics" not in payload:
         return None
     return payload
+
+
+def build_job_preview(job: Any, source_url: str | None = None) -> dict[str, Any]:
+    requirements = analyze_job_requirements(job.text)
+    return {
+        "title": job.title,
+        "company": job.company,
+        "location": infer_job_location(job.text),
+        "method": job.extraction_method,
+        "chars": len(job.text),
+        "source_url": source_url or job.url,
+        "role_family": requirements.get("role_family", "general_ai_data"),
+        "required": requirements.get("required", [])[:12],
+        "preferred": requirements.get("preferred", [])[:8],
+        "responsibilities": requirements.get("responsibilities", [])[:8],
+    }
+
+
+def infer_job_location(text: str) -> str:
+    for line in text.splitlines()[:40]:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        match = re.match(r"(?i)^(location|job location|office|work location)\s*[:\-]\s*(.+)$", stripped)
+        if match:
+            return match.group(2).strip()[:80]
+        if re.search(r"(?i)\b(remote|hybrid|onsite|taiwan|taipei|hsinchu|singapore|malaysia|united states)\b", stripped):
+            return stripped[:80]
+    return "Not detected"
 
 
 def list_review_runs(root: Path) -> list[dict[str, Any]]:
