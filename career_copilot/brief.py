@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 from .answer import build_citations, has_llm_config
+from .company_context import build_company_context_review
 from .contracts import validate_brief, write_json_contract
 from .documents import clean_text
 from .embeddings import Embedder
@@ -48,6 +49,14 @@ def generate_brief(
     supporting_hits = store.query(jd_comparison_text, embedder, top_k, categories=SUPPORTING_CATEGORIES)
     memories = [item.summary for item in memory.retrieve(retrieval_text, k=5)]
     requirements = apply_requirements_override(analyze_job_requirements(jd_comparison_text), requirements_override)
+    resolved_job_title = job_title or infer_title(job_text, job_path)
+    company_context_review = build_company_context_review(
+        requirements=requirements,
+        web_research=web_research or [],
+        company=job_company,
+        role=resolved_job_title,
+        job_text=jd_comparison_text,
+    )
     resume_candidates = rank_resume_candidates(
         store=store,
         embedder=embedder,
@@ -84,7 +93,7 @@ def generate_brief(
     )
     brutal_assessment = build_brutal_assessment(fit_score, matched, hidden_terms, gaps, resume_hits, supporting_hits)
     hermes_review = generate_brutal_llm_review(
-        job_title=job_title or infer_title(job_text, job_path),
+        job_title=resolved_job_title,
         job_text=job_text,
         fit_score=fit_score,
         application_verdict=application_verdict,
@@ -123,6 +132,11 @@ def generate_brief(
             "llm_agent_output_chars": agent_usage["output_chars"],
             "memory_hits": len(memories),
             "memory_summaries": memories[:5],
+            "company_context_status": company_context_review["status"],
+            "company_context_sources": company_context_review["sources_considered"],
+            "requirement_reweighting_recommendations": len(
+                company_context_review["weight_recommendations"]
+            ),
             "resume_chunks_considered": len(resume_hits),
             "resume_files_considered": len(cv_rankings),
             "active_resume": active_resume.get("source_path", ""),
@@ -132,8 +146,8 @@ def generate_brief(
     )
     all_citation_hits = resume_hits + supporting_hits
     payload = {
-        "schema_version": "1.1",
-        "job_title": job_title or infer_title(job_text, job_path),
+        "schema_version": "1.2",
+        "job_title": resolved_job_title,
         "job_input": {
             "source_type": job_source_type,
             "company": job_company,
@@ -145,6 +159,7 @@ def generate_brief(
         "active_resume": active_resume,
         "cv_rankings": cv_rankings,
         "jd_requirements": requirements,
+        "company_context_review": company_context_review,
         "evidence_depth": evidence_depth,
         "scoring_breakdown": rubric_result["scoring_breakdown"],
         "score_explanations": score_explanations,

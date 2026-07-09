@@ -39,9 +39,11 @@ def test_generate_brief_has_required_fields(tmp_path):
     job.write_text("# AI Engineer\nPython retrieval evaluation BM25", encoding="utf-8")
     brief = generate_brief(job, store, embedder, memory)
     assert brief["job_title"] == "AI Engineer"
-    assert brief["schema_version"] == "1.1"
+    assert brief["schema_version"] == "1.2"
     assert brief["matched_evidence"]
     assert brief["score_explanations"]
+    assert brief["company_context_review"]["status"] == "no_external_sources"
+    assert brief["company_context_review"]["weight_recommendations"] == []
     assert "llm_agent_steps" in brief
     assert "agent_trace" in brief
     assert brief["agent_consensus"]["source"] == "deterministic_fallback"
@@ -72,6 +74,8 @@ def test_generate_brief_from_text_with_web_research(tmp_path):
     assert brief["job_input"]["source_type"] == "text"
     assert brief["job_input"]["company"] == "Example"
     assert brief["web_research"][0]["source_type"] == "exa"
+    assert brief["company_context_review"]["status"] == "used"
+    assert brief["company_context_review"]["sources_considered"] == 1
     assert brief["cv_jd_review"]["score"] == brief["fit_score"]
 
 
@@ -212,6 +216,55 @@ def test_web_research_does_not_change_cv_jd_score(tmp_path, monkeypatch):
 
     assert with_research["fit_score"] == base["fit_score"]
     assert with_research["cv_jd_review"]["matched_terms"] == base["cv_jd_review"]["matched_terms"]
+    assert with_research["company_context_review"]["score_policy"] == "advisory_only_no_score_change"
+
+
+def test_company_context_recommends_external_requirement_weighting(tmp_path, monkeypatch):
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    embedder = HashingEmbedder()
+    store = JsonVectorStore(tmp_path / "vectors.json")
+    memory = MemoryStore(tmp_path / "memory.json")
+    resume = tmp_path / "resume" / "cv.md"
+    resume.parent.mkdir()
+    resume.write_text("Docker SQL production support troubleshooting.", encoding="utf-8")
+    store.upsert_chunks(chunk_document(resume, resume.read_text(encoding="utf-8"), root=tmp_path), embedder)
+
+    brief = generate_brief(
+        None,
+        store,
+        embedder,
+        memory,
+        job_text="# Manufacturing IT Engineer\nRequired: Docker C# production support troubleshooting.",
+        job_title="Manufacturing IT Engineer",
+        job_company="ExampleFab",
+        web_research=[
+            {
+                "title": "ExampleFab smart manufacturing",
+                "url": "https://example.com/smart-mfg",
+                "source_type": "exa",
+                "highlights": [
+                    "The team handles production support and troubleshooting for manufacturing systems.",
+                    "Platform modernization work is migrating legacy systems toward containers.",
+                ],
+                "summary": "Manufacturing IT supports production systems and Docker container platforms.",
+            },
+            {
+                "title": "ExampleFab operations engineering",
+                "url": "https://example.com/ops",
+                "source_type": "exa",
+                "highlights": ["Production support teams use Docker for internal tooling."],
+                "summary": "Troubleshooting production incidents is a recurring responsibility.",
+            },
+        ],
+    )
+
+    recommendations = {
+        item["term"]: item for item in brief["company_context_review"]["weight_recommendations"]
+    }
+    assert recommendations["docker"]["recommendation"] == "keep_high"
+    assert recommendations["production_support"]["external_source_count"] >= 2
+    assert recommendations["csharp"]["recommendation"] == "uncertain"
+    assert brief["company_context_review"]["migration_signals"]
 
 
 def test_brief_verdict_not_competitive_without_resume(tmp_path, monkeypatch):

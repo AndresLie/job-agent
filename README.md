@@ -91,7 +91,10 @@ python -m career_copilot evaluate-score
 documents. Project and experience documents are used afterward as hidden
 evidence for CV rewrites, not as proof that the current CV already matches.
 Company research is shown as context, but it does not change the CV-vs-JD
-score.
+score. When Exa sources are available, the result includes an advisory company
+context and requirement-weighting review that flags externally corroborated
+requirements, weakly supported requirements, and possible stack migration
+signals.
 The output also includes an application verdict and grounded CV bullet
 suggestions, so weak evidence can produce a blunt "do not apply yet" result.
 The score is a role-aware rubric, not a hiring probability: it considers
@@ -207,6 +210,11 @@ python -m career_copilot research-company --company "NVIDIA" --role "AI Engineer
 
 Use `--no-cache` if you want fetched job text or company research to be used
 only for the current command.
+
+Company research is advisory. It can explain that a requirement appears across
+company sources or that a stack migration signal may deserve manual review, but
+it does not silently alter the selected CV score. Use the web UI requirement
+override fields if you decide to change JD weighting after reading the sources.
 
 ## Use Your Own Experience Folder
 
@@ -341,6 +349,7 @@ object with:
 - `active_resume`
 - `cv_rankings`
 - `jd_requirements`
+- `company_context_review`
 - `evidence_depth`
 - `scoring_breakdown`
 - `score_explanations`

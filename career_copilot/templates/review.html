@@ -290,6 +290,7 @@
           {% elif result %}
             {% set active_resume = result.active_resume | default({}) %}
             {% set cv_rankings = result.cv_rankings | default([]) %}
+            {% set company_context = result.company_context_review | default({}) %}
             <header class="result-header">
               <div>
                 <p class="eyebrow">{{ result.role_family | default("general_ai_data") }}</p>
@@ -501,6 +502,67 @@
                     </article>
                   {% endfor %}
                 </div>
+              {% endif %}
+            </section>
+
+            <section class="section-block context-section">
+              <p class="eyebrow">Advisory Only</p>
+              <h3>Company Context & Weighting Review</h3>
+              <p>{{ company_context.summary | default("No external company context is available for this run.") }}</p>
+              <div class="context-meta">
+                <span>Status: <strong>{{ company_context.status | default("missing") | replace("_", " ") }}</strong></span>
+                <span>Sources: <strong>{{ company_context.sources_considered | default(0) }}</strong></span>
+                <span>Score policy: <strong>{{ company_context.score_policy | default("no score change") | replace("_", " ") }}</strong></span>
+              </div>
+
+              {% if company_context.weight_recommendations %}
+                <div class="weight-grid">
+                  {% for item in company_context.weight_recommendations[:8] %}
+                    <article class="weight-card weight-{{ item.recommendation }}">
+                      <div class="weight-card-top">
+                        <strong>{{ item.term }}</strong>
+                        <span>{{ item.recommendation | replace("_", " ") }}</span>
+                      </div>
+                      <p>{{ item.reason }}</p>
+                      <div class="context-meta">
+                        <span>current <strong>{{ item.current_strength }}</strong></span>
+                        <span>suggested <strong>{{ item.suggested_strength }}</strong></span>
+                        <span>confidence <strong>{{ item.confidence }}</strong></span>
+                      </div>
+                      {% if item.source_urls %}
+                        <div class="source-links">
+                          {% for url in item.source_urls %}
+                            <a href="{{ url }}" target="_blank" rel="noreferrer">source {{ loop.index }}</a>
+                          {% endfor %}
+                        </div>
+                      {% endif %}
+                    </article>
+                  {% endfor %}
+                </div>
+              {% else %}
+                <p class="muted">No requirement reweighting recommendations were produced.</p>
+              {% endif %}
+
+              {% if company_context.migration_signals %}
+                <h4>Migration Signals</h4>
+                <ul class="compact-list">
+                  {% for item in company_context.migration_signals %}
+                    <li>
+                      <strong>{{ item.source_title }}</strong>
+                      <span>{{ item.excerpt }}</span>
+                      {% if item.source_url %}<a href="{{ item.source_url }}" target="_blank" rel="noreferrer">source</a>{% endif %}
+                    </li>
+                  {% endfor %}
+                </ul>
+              {% endif %}
+
+              {% if company_context.uncertainties %}
+                <h4>Uncertainties</h4>
+                <ul class="compact-list">
+                  {% for item in company_context.uncertainties %}
+                    <li><span>{{ item }}</span></li>
+                  {% endfor %}
+                </ul>
               {% endif %}
             </section>
 
@@ -741,6 +803,10 @@
                 <strong>{{ result.diagnostics.llm_status | default("unknown") }}</strong>
                 <span>Exa status</span>
                 <strong>{{ result.diagnostics.web_research_status | default("disabled") }}</strong>
+                <span>Company context</span>
+                <strong>{{ result.diagnostics.company_context_status | default("missing") }}</strong>
+                <span>Context sources</span>
+                <strong>{{ result.diagnostics.company_context_sources | default(0) }}</strong>
                 <span>Memory hits</span>
                 <strong>{{ result.diagnostics.memory_hits | default(0) }}</strong>
                 <span>Requirement override</span>

@@ -3,13 +3,19 @@ from career_copilot.contracts import validate_brief
 
 def test_validate_brief_accepts_valid_payload():
     payload = {
-        "schema_version": "1.1",
+        "schema_version": "1.2",
         "job_title": "AI Engineer",
         "fit_score": 80,
         "role_family": "ai_engineer",
         "active_resume": {},
         "cv_rankings": [],
         "jd_requirements": {"required": ["python"], "preferred": [], "responsibilities": []},
+        "company_context_review": {
+            "status": "no_external_sources",
+            "summary": "No external company sources were used.",
+            "sources_considered": 0,
+            "weight_recommendations": [],
+        },
         "evidence_depth": {"by_term": {}},
         "scoring_breakdown": {
             "required_skill_coverage": 45,
