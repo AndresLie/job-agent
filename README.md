@@ -9,6 +9,9 @@ It combines three AI engineering patterns:
 - RAG over local CV, project, and experience evidence with citations.
 - Per-CV scoring when multiple resumes are indexed, so one selected CV drives
   the score instead of blending evidence across resume versions.
+- Hermes multi-agent review that separates JD analysis, CV matching, evidence
+  mining, claim verification, criticism, contradiction checking, and final
+  recommendation synthesis.
 - Durable memory for user preferences and career facts.
 - Deterministic JSON contracts and retrieval evaluation.
 
@@ -46,25 +49,68 @@ The strongest demo path is:
 ## Architecture
 
 ```mermaid
-flowchart LR
-    A[Resume PDFs and Markdown] --> B[Document ingestion]
+flowchart TD
+    A[Resume PDFs / Markdown] --> B[Document ingestion]
     C[Project notes] --> B
     D[Experience notes] --> B
-    B --> E[Chunking and citation metadata]
+    B --> E[Chunking + citation metadata]
     E --> F[Local vector store]
-    G[JD text or job URL] --> H[JD extraction and preview]
-    H --> I[Requirement parser]
-    F --> J[CV-only retrieval]
-    F --> K[Project and experience retrieval]
-    I --> L[Deterministic scoring rubric]
-    J --> L
-    K --> M[Grounded CV rewrite suggestions]
-    N[Memory store] --> O[Preference recall]
-    L --> P[Validated JSON brief]
-    M --> P
-    O --> P
-    P --> Q[Web review history and exportable artifacts]
+
+    G[JD text or job URL] --> H[JD extraction + preview]
+    H --> I[Role-aware requirement parser]
+    I --> I1[Required / preferred / grouped requirements]
+
+    F --> J[Per-CV retrieval]
+    J --> K[Select one active resume]
+    I1 --> L[Deterministic CV-vs-JD scorer]
+    K --> L
+    L --> M[Fit score, verdict, gaps, score caps]
+
+    F --> N[Project + experience retrieval]
+    N --> O[CV improvement miner]
+    O --> O1[Safe direct suggestions]
+    O --> O2[Adjacent evidence warnings]
+    O --> O3[No-evidence gaps]
+
+    P[Memory store] --> Q[Preference recall]
+    R[Exa company research] --> S[Advisory company context]
+
+    M --> T[Hermes multi-agent review]
+    O1 --> T
+    O2 --> T
+    O3 --> T
+    Q --> T
+    S --> T
+
+    T --> U[Validated JSON brief]
+    U --> V[Tabbed web UI / history / export]
 ```
+
+The deterministic scorer is the source of truth for the numeric score. Hermes
+agents can critique the fit, find hidden evidence, and flag contradictions, but
+they do not override the selected CV score. Company research is also advisory:
+it can explain context and requirement weighting, but it does not silently
+change the CV-vs-JD result.
+
+## Hermes Multi-Agent Flow
+
+When NVIDIA chat is configured, `brief` runs a structured specialist chain:
+
+1. `jd_analyst`: extracts role intent, hard requirements, seniority, and JD
+   screening risks.
+2. `cv_match`: audits only the selected CV against the JD.
+3. `evidence_miner`: searches project and experience evidence for safe CV
+   improvements.
+4. `claim_verifier`: checks generated CV bullets for unsupported tools,
+   invented metrics, exaggerated deployment claims, or unsafe wording.
+5. `critic`: challenges inflated conclusions and weak evidence.
+6. `contradiction_judge`: compares agents against the deterministic score,
+   verdict, gaps, and claim-verifier findings.
+7. `final_synthesizer`: produces the brutally honest final recommendation.
+
+Each agent returns a schema-checked JSON object with `conclusion`, `findings`,
+`risks`, `recommendations`, and `confidence`. The UI exposes the full agent
+trace, schema errors, latency, contradiction findings, and consensus summary.
 
 ## Quickstart
 
