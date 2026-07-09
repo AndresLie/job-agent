@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -33,6 +34,7 @@ def test_web_index_renders_form(tmp_path, monkeypatch):
     assert response.status_code == 200
     assert "Run Review" in response.text
     assert "Job description" in response.text
+    assert "Requirement Calibration" in response.text
     assert "data/raw" in response.text or "data\\raw" in response.text
     assert "CV vs JD Review" in response.text or "No review yet" in response.text
     assert "data-review-form" in response.text
@@ -63,7 +65,9 @@ def test_web_review_with_pasted_jd_returns_result(tmp_path, monkeypatch):
     assert "Evidence used" in response.text
     assert "CV Rewrite Suggestions" in response.text
     assert "data-copy-target" in response.text
-    assert "Claim check" in response.text
+    assert "Resume bullet to consider" in response.text
+    assert "Why this is safe or risky" in response.text
+    assert "Source evidence" in response.text
     assert "Review Diagnostics" in response.text
     assert (root / "outputs" / "latest_brief.json").exists()
     assert list((root / "outputs" / "runs").glob("review-*.json"))
@@ -184,6 +188,36 @@ def test_web_preview_job_url_populates_editable_jd(tmp_path, monkeypatch):
     assert "Required:" in response.text
     assert "docker" in response.text
     assert "Preferred:" in response.text
+    assert 'name="required_terms"' in response.text
+    assert 'name="ignored_terms"' in response.text
+
+
+def test_web_review_uses_requirement_override(tmp_path, monkeypatch):
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    root = build_example_root(tmp_path)
+    client = TestClient(create_app(project_root=root))
+    response = client.post(
+        "/review",
+        data={
+            "rag_folder": str(root / "examples"),
+            "rebuild_index": "true",
+            "company": "Example",
+            "job_text": "# AI Engineer\nPython SQL RAG retrieval evaluation",
+            "job_url": "",
+            "role_family_override": "software_engineer",
+            "required_terms": "sql",
+            "preferred_terms": "python",
+            "ignored_terms": "rag, evaluation",
+            "top_k": "8",
+        },
+    )
+    assert response.status_code == 200
+    payload = json.loads((root / "outputs" / "latest_brief.json").read_text(encoding="utf-8"))
+    assert payload["role_family"] == "software_engineer"
+    assert payload["jd_requirements"]["required"] == ["sql"]
+    assert payload["jd_requirements"]["preferred"] == ["python"]
+    assert set(payload["jd_requirements"]["ignored"]) == {"evaluation", "rag"}
+    assert payload["diagnostics"]["requirement_override_used"] is True
 
 
 def test_web_history_lists_and_loads_review_runs(tmp_path, monkeypatch):

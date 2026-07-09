@@ -31,6 +31,7 @@ def generate_brief(
     job_cached_path: str | None = None,
     web_research: list[dict] | None = None,
     diagnostics: dict | None = None,
+    requirements_override: dict | None = None,
 ) -> dict:
     if job_text is None:
         if job_path is None:
@@ -46,7 +47,7 @@ def generate_brief(
     resume_hits = store.query(jd_comparison_text, embedder, top_k, categories=RESUME_CATEGORIES)
     supporting_hits = store.query(jd_comparison_text, embedder, top_k, categories=SUPPORTING_CATEGORIES)
     memories = [item.summary for item in memory.retrieve(retrieval_text, k=5)]
-    requirements = analyze_job_requirements(jd_comparison_text)
+    requirements = apply_requirements_override(analyze_job_requirements(jd_comparison_text), requirements_override)
     evidence_depth = analyze_evidence_depth(requirements, resume_hits, supporting_hits)
     rubric_result = score_with_rubric(requirements, evidence_depth, resume_hits)
     job_terms = set(requirements["required"]) | set(requirements["preferred"])
@@ -70,7 +71,7 @@ def generate_brief(
         weak_evidence=weak_evidence,
     )
     brutal_assessment = build_brutal_assessment(fit_score, matched, hidden_terms, gaps, resume_hits, supporting_hits)
-    llm_review = generate_brutal_llm_review(
+    hermes_review = generate_brutal_llm_review(
         job_title=job_title or infer_title(job_text, job_path),
         job_text=job_text,
         fit_score=fit_score,
@@ -86,10 +87,12 @@ def generate_brief(
         resume_hits=resume_hits,
         supporting_hits=supporting_hits,
     )
+    llm_review = hermes_review["final_review"] if hermes_review else None
     diagnostics_payload = dict(diagnostics or {})
     diagnostics_payload.update(
         {
             "llm_status": "used" if llm_review else ("configured_but_unavailable" if has_llm_config() else "not_configured"),
+            "llm_agent_steps": len(hermes_review["steps"]) if hermes_review else 0,
             "memory_hits": len(memories),
             "memory_summaries": memories[:5],
             "resume_chunks_considered": len(resume_hits),
@@ -137,6 +140,7 @@ def generate_brief(
         "recommended_actions": build_actions(gaps, hidden_terms, supporting_hits, resume_hits),
         "brutal_assessment": brutal_assessment,
         "llm_brutal_review": llm_review,
+        "llm_agent_steps": hermes_review["steps"] if hermes_review else [],
         "citations": build_citations(all_citation_hits),
         "web_research": web_research or [],
         "confidence": confidence_score(resume_hits, supporting_hits),
@@ -148,6 +152,89 @@ def generate_brief(
     if write_contract:
         write_json_contract(payload)
     return payload
+
+
+def apply_requirements_override(requirements: dict, override: dict | None) -> dict:
+    if not override:
+        return requirements
+    required = normalize_override_terms(override.get("required", []))
+    preferred = normalize_override_terms(override.get("preferred", []))
+    ignored = set(normalize_override_terms(override.get("ignored", [])))
+    role_family = str(override.get("role_family") or requirements.get("role_family") or "general_ai_data").strip()
+    if not required and not preferred and not ignored and role_family == requirements.get("role_family"):
+        return requirements
+
+    required = [term for term in required if term not in ignored]
+    preferred = [term for term in preferred if term not in ignored and term not in set(required)]
+    selected_terms = set(required) | set(preferred)
+    context = [term for term in requirements.get("context", []) if term not in ignored and term not in selected_terms]
+    responsibilities = list(requirements.get("responsibilities", []))
+    term_details = merge_override_details(requirements, role_family, required, preferred, context, sorted(ignored))
+    return {
+        **requirements,
+        "role_family": role_family,
+        "required": required,
+        "preferred": preferred,
+        "context": context,
+        "ignored": sorted(ignored),
+        "responsibilities": responsibilities,
+        "term_details": term_details,
+        "term_weights": {item["term"]: item["weight"] for item in term_details if item["term"] not in ignored},
+        "all_terms": sorted(set(required) | set(preferred) | set(context) | set(responsibilities)),
+        "override_applied": True,
+    }
+
+
+def normalize_override_terms(value: list[str] | str) -> list[str]:
+    if isinstance(value, str):
+        parts = re.split(r"[,;\n]", value)
+    else:
+        parts = value
+    seen = set()
+    terms = []
+    for item in parts:
+        term = re.sub(r"\s+", "_", str(item).strip().casefold())
+        term = re.sub(r"[^a-z0-9_+#/.-]", "", term)
+        if term and term not in seen:
+            seen.add(term)
+            terms.append(term)
+    return terms
+
+
+def merge_override_details(
+    requirements: dict,
+    role_family: str,
+    required: list[str],
+    preferred: list[str],
+    context: list[str],
+    ignored: list[str],
+) -> list[dict]:
+    existing = {item.get("term"): dict(item) for item in requirements.get("term_details", []) if item.get("term")}
+    merged = []
+    for strength, terms, weight in [
+        ("required", required, 1.0),
+        ("preferred", preferred, 0.55),
+        ("context", context, 0.2),
+        ("ignored", ignored, 0.0),
+    ]:
+        for term in terms:
+            detail = existing.get(term, {})
+            merged.append(
+                {
+                    "term": term,
+                    "strength": strength,
+                    "section": detail.get("section", "manual_override"),
+                    "weight": float(detail.get("weight", weight if strength != "ignored" else 0.0)),
+                    "role_weight": float(detail.get("role_weight", 1.0)),
+                    "section_weight": float(detail.get("section_weight", weight)),
+                    "reason": (
+                        f"{term} was manually marked as {strength} for {role_family}."
+                        if strength in {"required", "preferred", "ignored"}
+                        else detail.get("reason", f"{term} remains contextual for {role_family}.")
+                    ),
+                }
+            )
+    return sorted(merged, key=lambda item: item["term"])
 
 
 def infer_title(job_text: str, path: Path | None) -> str:
@@ -572,40 +659,92 @@ def generate_brutal_llm_review(
     gaps: list[str],
     resume_hits: list[dict],
     supporting_hits: list[dict],
-) -> str | None:
+) -> dict | None:
     resume_context = format_hits_for_prompt(resume_hits[:4])
     supporting_context = format_hits_for_prompt(supporting_hits[:5])
     rewrite_context = "\n".join(
         f"- {item['bullet']} (source: {item['source_path']} chunk {item['chunk_index']})"
         for item in cv_rewrite_suggestions
     )
-    return nvidia_chat(
-        system_prompt=(
-            "You are a brutally honest career reviewer for data scientist and AI roles. "
-            "Use only the supplied JD, CV evidence, and project/experience evidence. "
-            "Do not flatter the candidate. If the evidence is insufficient, say so clearly. "
-            "Separate current CV fit from recommendations to improve the CV. "
-            "Do not invent metrics, employers, outcomes, or tools."
-        ),
-        user_prompt=(
-            f"Job title: {job_title}\n"
-            f"JD excerpt:\n{job_text[:3500]}\n\n"
-            f"Deterministic JD-to-CV score: {fit_score}/100\n"
-            f"Deterministic application verdict: {application_verdict}\n"
-            f"Role family: {requirements.get('role_family')}\n"
-            f"JD requirements: {requirements}\n"
-            f"Scoring breakdown: {scoring_breakdown}\n"
-            f"Weak evidence: {', '.join(weak_evidence) or 'none'}\n"
-            f"Evidence depth: {evidence_depth}\n"
-            f"CV matched terms: {', '.join(matched) or 'none'}\n"
-            f"Terms found in projects/experience but missing from CV: {', '.join(hidden_terms) or 'none'}\n"
-            f"Terms with no evidence: {', '.join(gaps) or 'none'}\n\n"
-            f"CV evidence:\n{resume_context or 'No CV evidence.'}\n\n"
-            f"Project/experience evidence:\n{supporting_context or 'No project/experience evidence.'}\n\n"
-            f"Grounded draft CV bullets:\n{rewrite_context or 'No grounded rewrite suggestions.'}\n\n"
-            "Return concise feedback with: verdict, why, improved CV bullets, and whether applying is realistic."
-        ),
+    base_context = (
+        f"Job title: {job_title}\n"
+        f"JD excerpt:\n{job_text[:3500]}\n\n"
+        f"Deterministic JD-to-CV score: {fit_score}/100\n"
+        f"Deterministic application verdict: {application_verdict}\n"
+        f"Role family: {requirements.get('role_family')}\n"
+        f"JD requirements: {requirements}\n"
+        f"Scoring breakdown: {scoring_breakdown}\n"
+        f"Weak evidence: {', '.join(weak_evidence) or 'none'}\n"
+        f"Evidence depth: {evidence_depth}\n"
+        f"CV matched terms: {', '.join(matched) or 'none'}\n"
+        f"Terms found in projects/experience but missing from CV: {', '.join(hidden_terms) or 'none'}\n"
+        f"Terms with no evidence: {', '.join(gaps) or 'none'}\n\n"
+        f"CV evidence:\n{resume_context or 'No CV evidence.'}\n\n"
+        f"Project/experience evidence:\n{supporting_context or 'No project/experience evidence.'}\n\n"
+        f"Grounded draft CV bullets:\n{rewrite_context or 'No grounded rewrite suggestions.'}\n"
     )
+    system_prompt = (
+        "You are Hermes, a multi-step career reasoning agent for data scientist and AI roles. "
+        "Use only the supplied JD, CV evidence, and project/experience evidence. "
+        "Do not reveal hidden chain-of-thought; return concise audit conclusions only. "
+        "Do not flatter the candidate. If the evidence is insufficient, say so clearly. "
+        "Keep the deterministic score as the source of truth. Do not invent metrics, employers, outcomes, or tools."
+    )
+    step_specs = [
+        {
+            "id": "fit_diagnosis",
+            "title": "Current CV Fit Diagnosis",
+            "instruction": (
+                "Step 1: Compare the current CV evidence against the JD only. "
+                "Explain whether the deterministic score is justified, identify the strongest CV evidence, "
+                "and name the highest-impact CV gaps. Do not use project/experience evidence as current CV evidence."
+            ),
+        },
+        {
+            "id": "evidence_audit",
+            "title": "Project and Experience Evidence Audit",
+            "instruction": (
+                "Step 2: Audit the project/experience evidence for the missing JD requirements. "
+                "Classify what can be safely moved into the CV, what needs verification, and what has no evidence. "
+                "Be blunt when projects are too weak for the target role."
+            ),
+        },
+        {
+            "id": "rewrite_plan",
+            "title": "Brutal CV Rewrite Plan",
+            "instruction": (
+                "Step 3: Produce a final recommendation with: apply/no-apply guidance, "
+                "the top CV rewrite moves, grounded bullet suggestions, and warnings about claims the candidate should not make."
+            ),
+        },
+    ]
+    steps = []
+    for step in step_specs:
+        prior = format_prior_agent_steps(steps)
+        output = nvidia_chat(
+            system_prompt=system_prompt,
+            user_prompt=(
+                f"{base_context}\n\n"
+                f"Prior step conclusions:\n{prior or 'None yet.'}\n\n"
+                f"{step['instruction']}\n"
+                "Return 4-8 concise bullets. Start with the direct conclusion."
+            ),
+        )
+        if not output:
+            return None
+        steps.append({"id": step["id"], "title": step["title"], "output": output})
+    return {"steps": steps, "final_review": format_hermes_review(steps)}
+
+
+def format_prior_agent_steps(steps: list[dict]) -> str:
+    return "\n\n".join(f"{step['title']}:\n{step['output']}" for step in steps)
+
+
+def format_hermes_review(steps: list[dict]) -> str:
+    lines = ["Hermes multi-step review"]
+    for index, step in enumerate(steps, start=1):
+        lines.extend(["", f"{index}. {step['title']}", step["output"]])
+    return "\n".join(lines)
 
 
 def format_hits_for_prompt(hits: list[dict]) -> str:

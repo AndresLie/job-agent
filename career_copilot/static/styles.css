@@ -322,6 +322,19 @@ button.is-loading .button-spinner {
   color: var(--muted);
 }
 
+.calibration-box {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfcfd;
+}
+
+.calibration-box textarea {
+  min-height: 78px;
+}
+
 .preview-diagnostics {
   display: grid;
   gap: 5px;
@@ -568,23 +581,77 @@ button.is-loading .button-spinner {
 }
 
 .suggestion {
-  border-left: 3px solid var(--accent);
-  padding: 8px 0 8px 12px;
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  padding: 14px;
+  background: #fbfcfd;
 }
 
-.suggestion-top {
+.suggestion-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
-  align-items: start;
+  align-items: center;
+}
+
+.suggestion-header h4 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.rewrite-bullet {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+  line-height: 1.5;
 }
 
 .suggestion p {
-  margin: 0 0 6px;
+  margin: 0;
 }
 
-.suggestion blockquote {
-  margin: 8px 0 0;
+.suggestion-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.suggestion-summary div {
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px;
+  background: #ffffff;
+}
+
+.suggestion-summary span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.suggestion-summary strong {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.source-evidence {
+  display: grid;
+  gap: 6px;
+}
+
+.source-evidence > strong {
+  font-size: 13px;
+}
+
+.source-evidence blockquote {
+  margin: 0;
   border-left: 3px solid var(--line);
   padding-left: 10px;
   color: var(--muted);
@@ -663,6 +730,39 @@ button.is-loading .button-spinner {
   overflow: auto;
 }
 
+.agent-step-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.agent-step {
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfcfd;
+}
+
+.agent-step span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.agent-step h4 {
+  margin: 4px 0 8px;
+}
+
+.agent-step pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow: auto;
+  font-family: inherit;
+  color: var(--text);
+}
+
 .alert {
   padding: 12px;
   margin-bottom: 16px;
@@ -704,7 +804,8 @@ button.is-loading .button-spinner {
     justify-items: start;
   }
 
-  .suggestion-top {
+  .suggestion-header,
+  .suggestion-summary {
     grid-template-columns: 1fr;
   }
 

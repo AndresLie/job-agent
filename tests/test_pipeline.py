@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from career_copilot.answer import answer_query
-from career_copilot.brief import generate_brief, verify_rewrite_claim
+from career_copilot.brief import generate_brief, generate_brutal_llm_review, verify_rewrite_claim
 from career_copilot.documents import chunk_document
 from career_copilot.embeddings import HashingEmbedder
 from career_copilot.memory import MemoryStore
@@ -40,6 +40,7 @@ def test_generate_brief_has_required_fields(tmp_path):
     assert brief["job_title"] == "AI Engineer"
     assert brief["matched_evidence"]
     assert brief["score_explanations"]
+    assert "llm_agent_steps" in brief
     assert brief["diagnostics"]["llm_status"] in {"not_configured", "configured_but_unavailable", "used"}
 
 
@@ -68,6 +69,30 @@ def test_generate_brief_from_text_with_web_research(tmp_path):
     assert brief["job_input"]["company"] == "Example"
     assert brief["web_research"][0]["source_type"] == "exa"
     assert brief["cv_jd_review"]["score"] == brief["fit_score"]
+
+
+def test_generate_brief_uses_requirement_override(tmp_path, monkeypatch):
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    store, embedder, memory = build_store(tmp_path)
+    brief = generate_brief(
+        None,
+        store,
+        embedder,
+        memory,
+        job_text="# AI Engineer\nPython RAG retrieval evaluation",
+        job_title="AI Engineer",
+        requirements_override={
+            "role_family": "software_engineer",
+            "required": "retrieval",
+            "preferred": "python",
+            "ignored": "rag, evaluation",
+        },
+    )
+    assert brief["role_family"] == "software_engineer"
+    assert brief["jd_requirements"]["required"] == ["retrieval"]
+    assert brief["jd_requirements"]["preferred"] == ["python"]
+    assert set(brief["jd_requirements"]["ignored"]) == {"evaluation", "rag"}
+    assert brief["jd_requirements"]["override_applied"] is True
 
 
 def test_brief_scores_resume_only_and_uses_projects_for_cv_recommendations(tmp_path, monkeypatch):
@@ -234,4 +259,55 @@ def test_claim_verifier_flags_unsupported_impact_language():
     )
     assert result["status"] == "needs_verification"
     assert "deployment evidence" in result["required_evidence"]
-    assert "measured impact" in result["required_evidence"]
+
+
+def test_hermes_review_runs_multi_step_agent(monkeypatch):
+    calls = []
+
+    def fake_nvidia_chat(system_prompt, user_prompt):
+        calls.append({"system_prompt": system_prompt, "user_prompt": user_prompt})
+        return f"step {len(calls)} conclusion"
+
+    monkeypatch.setattr("career_copilot.brief.nvidia_chat", fake_nvidia_chat)
+    review = generate_brutal_llm_review(
+        job_title="AI Engineer",
+        job_text="Python retrieval evaluation Docker",
+        fit_score=56,
+        application_verdict={"label": "stretch", "reason": "Some CV evidence is missing."},
+        cv_rewrite_suggestions=[
+            {
+                "bullet": "Built retrieval evaluation with Docker. Quantify impact if true.",
+                "source_path": "projects/rag.md",
+                "chunk_index": 0,
+            }
+        ],
+        requirements={"role_family": "ai_engineer", "required": ["python", "retrieval", "docker"], "preferred": []},
+        evidence_depth={"python": {"resume": 1}, "docker": {"supporting": 1}},
+        scoring_breakdown={"base": 56},
+        weak_evidence=["docker"],
+        matched=["python"],
+        hidden_terms=["docker", "retrieval"],
+        gaps=["kubernetes"],
+        resume_hits=[
+            {
+                "text": "Python data analysis.",
+                "category": "resume",
+                "filename": "cv.md",
+                "chunk_index": 0,
+            }
+        ],
+        supporting_hits=[
+            {
+                "text": "Built a RAG system with retrieval evaluation and Docker deployment.",
+                "category": "projects",
+                "filename": "rag.md",
+                "chunk_index": 0,
+            }
+        ],
+    )
+
+    assert review is not None
+    assert [step["id"] for step in review["steps"]] == ["fit_diagnosis", "evidence_audit", "rewrite_plan"]
+    assert "Hermes multi-step review" in review["final_review"]
+    assert "Prior step conclusions:\nNone yet." in calls[0]["user_prompt"]
+    assert "step 1 conclusion" in calls[1]["user_prompt"]

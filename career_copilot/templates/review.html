@@ -66,6 +66,26 @@
               </div>
             {% endif %}
 
+            <div class="calibration-box">
+              <p class="eyebrow">Requirement Calibration</p>
+              <label>
+                <span>Role family</span>
+                <input name="role_family_override" value="{{ form.role_family_override }}" placeholder="Optional: ai_engineer, data_scientist, manufacturing_it">
+              </label>
+              <label>
+                <span>Required terms</span>
+                <textarea name="required_terms" rows="3" placeholder="Optional comma-separated canonical terms">{{ form.required_terms }}</textarea>
+              </label>
+              <label>
+                <span>Preferred terms</span>
+                <input name="preferred_terms" value="{{ form.preferred_terms }}" placeholder="Optional comma-separated terms">
+              </label>
+              <label>
+                <span>Ignored terms</span>
+                <input name="ignored_terms" value="{{ form.ignored_terms }}" placeholder="Optional terms to exclude from scoring">
+              </label>
+            </div>
+
             <label>
               <span>Job description</span>
               <textarea name="job_text" rows="12" placeholder="Paste the JD here">{{ form.job_text }}</textarea>
@@ -500,27 +520,49 @@
                 <div class="suggestion-list">
                   {% for item in result.cv_rewrite_suggestions %}
                     <article class="suggestion">
-                      <div class="suggestion-top">
-                        <p id="rewrite-{{ loop.index }}">{{ item.bullet }}</p>
-                        <button type="button" class="copy-button" data-copy-target="rewrite-{{ loop.index }}">Copy</button>
+                      <div class="suggestion-header">
+                        <div>
+                          <p class="eyebrow">Suggestion {{ loop.index }}</p>
+                          <h4>Resume bullet to consider</h4>
+                        </div>
+                        <button type="button" class="copy-button" data-copy-target="rewrite-{{ loop.index }}">Copy bullet</button>
                       </div>
-                      <div class="evidence-trace">
-                        <span>{{ item.source_category | default("supporting") }}/{{ item.source_path }}</span>
-                        <span>chunk {{ item.chunk_index }}</span>
-                        <span>confidence {{ item.confidence }}</span>
-                        <span>{{ (item.claim_verification.status if item.claim_verification else ("supported" if item.safe_to_claim | default(true) else "needs_verification")) | replace("_", " ") }}</span>
+
+                      <div class="rewrite-bullet" id="rewrite-{{ loop.index }}">{{ item.bullet }}</div>
+
+                      <div class="suggestion-summary">
+                        <div>
+                          <span>Target terms</span>
+                          <strong>{{ item.target_terms | join(", ") if item.target_terms else "none" }}</strong>
+                        </div>
+                        <div>
+                          <span>Confidence</span>
+                          <strong>{{ item.confidence }}</strong>
+                        </div>
+                        <div>
+                          <span>Claim status</span>
+                          <strong>{{ (item.claim_verification.status if item.claim_verification else ("supported" if item.safe_to_claim | default(true) else "needs_verification")) | replace("_", " ") }}</strong>
+                        </div>
+                        <div>
+                          <span>Source</span>
+                          <strong>{{ item.source_category | default("supporting") }}/{{ item.source_path }} chunk {{ item.chunk_index }}</strong>
+                        </div>
                       </div>
+
                       {% if item.claim_verification %}
                         <div class="claim-box claim-{{ item.claim_verification.status }}">
-                          <strong>Claim check: {{ item.claim_verification.status | replace("_", " ") }}</strong>
+                          <strong>Why this is safe or risky</strong>
                           <p>{{ item.claim_verification.reason }}</p>
                           {% if item.claim_verification.required_evidence %}
-                            <span>Required evidence: {{ item.claim_verification.required_evidence | join(", ") }}</span>
+                            <span>Verify before using: {{ item.claim_verification.required_evidence | join(", ") }}</span>
                           {% endif %}
                         </div>
                       {% endif %}
                       {% if item.evidence_excerpt %}
-                        <blockquote>{{ item.evidence_excerpt }}</blockquote>
+                        <div class="source-evidence">
+                          <strong>Source evidence</strong>
+                          <blockquote>{{ item.evidence_excerpt }}</blockquote>
+                        </div>
                       {% endif %}
                     </article>
                   {% endfor %}
@@ -533,7 +575,17 @@
             <section class="section-block">
               <h3>Brutal Assessment</h3>
               <p>{{ result.brutal_assessment }}</p>
-              {% if result.llm_brutal_review %}
+              {% if result.llm_agent_steps %}
+                <div class="agent-step-list">
+                  {% for step in result.llm_agent_steps %}
+                    <article class="agent-step">
+                      <span>Hermes step {{ loop.index }}</span>
+                      <h4>{{ step.title }}</h4>
+                      <pre>{{ step.output }}</pre>
+                    </article>
+                  {% endfor %}
+                </div>
+              {% elif result.llm_brutal_review %}
                 <pre class="llm-review">{{ result.llm_brutal_review }}</pre>
               {% endif %}
             </section>
@@ -553,6 +605,8 @@
                 <strong>{{ result.diagnostics.web_research_status | default("disabled") }}</strong>
                 <span>Memory hits</span>
                 <strong>{{ result.diagnostics.memory_hits | default(0) }}</strong>
+                <span>Requirement override</span>
+                <strong>{{ "used" if result.diagnostics.requirement_override_used else "auto" }}</strong>
               </div>
               {% if result.diagnostics.memory_recall %}
                 <h4>Recalled Memory</h4>

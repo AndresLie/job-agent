@@ -83,6 +83,10 @@ def create_app(project_root: Path | None = None) -> FastAPI:
         memory_note: str = Form(""),
         memory_tags: str = Form(""),
         memory_query: str = Form(""),
+        role_family_override: str = Form(""),
+        required_terms: str = Form(""),
+        preferred_terms: str = Form(""),
+        ignored_terms: str = Form(""),
         top_k: int = Form(8),
     ) -> HTMLResponse:
         form = {
@@ -95,6 +99,10 @@ def create_app(project_root: Path | None = None) -> FastAPI:
             "memory_note": memory_note,
             "memory_tags": memory_tags,
             "memory_query": memory_query,
+            "role_family_override": role_family_override,
+            "required_terms": required_terms,
+            "preferred_terms": preferred_terms,
+            "ignored_terms": ignored_terms,
             "top_k": top_k,
         }
         try:
@@ -114,6 +122,14 @@ def create_app(project_root: Path | None = None) -> FastAPI:
                 }
             )
             preview = build_job_preview(job, job_url.strip())
+            form.update(
+                {
+                    "role_family_override": preview["role_family"],
+                    "required_terms": ", ".join(preview["required"]),
+                    "preferred_terms": ", ".join(preview["preferred"]),
+                    "ignored_terms": ", ".join(preview["ignored"]),
+                }
+            )
             notice = "Extracted JD preview. Edit the text if needed, then run review."
             return render(request, root=root, form=form, preview=preview, notice=notice)
         except Exception as exc:
@@ -131,6 +147,10 @@ def create_app(project_root: Path | None = None) -> FastAPI:
         memory_note: str = Form(""),
         memory_tags: str = Form(""),
         memory_query: str = Form(""),
+        role_family_override: str = Form(""),
+        required_terms: str = Form(""),
+        preferred_terms: str = Form(""),
+        ignored_terms: str = Form(""),
         top_k: int = Form(8),
     ) -> HTMLResponse:
         form = {
@@ -143,6 +163,10 @@ def create_app(project_root: Path | None = None) -> FastAPI:
             "memory_note": memory_note,
             "memory_tags": memory_tags,
             "memory_query": memory_query,
+            "role_family_override": role_family_override,
+            "required_terms": required_terms,
+            "preferred_terms": preferred_terms,
+            "ignored_terms": ignored_terms,
             "top_k": top_k,
         }
         try:
@@ -157,6 +181,10 @@ def create_app(project_root: Path | None = None) -> FastAPI:
                 memory_note=memory_note,
                 memory_tags=memory_tags,
                 memory_query=memory_query,
+                role_family_override=role_family_override,
+                required_terms=required_terms,
+                preferred_terms=preferred_terms,
+                ignored_terms=ignored_terms,
                 top_k=top_k,
             )
             app.state.latest_brief = payload
@@ -179,6 +207,10 @@ def run_review(
     memory_note: str,
     memory_tags: str,
     memory_query: str,
+    role_family_override: str,
+    required_terms: str,
+    preferred_terms: str,
+    ignored_terms: str,
     top_k: int,
 ) -> tuple[dict[str, Any], str]:
     data_dir = root / "data" / "raw"
@@ -207,6 +239,7 @@ def run_review(
         "memory_recall": [],
         "result_path": str(run_output),
         "latest_path": str(latest_output),
+        "requirement_override_used": False,
     }
     if rebuild_index:
         source = resolve_local_path(rag_folder or "data/raw", root)
@@ -253,6 +286,13 @@ def run_review(
     )
     diagnostics["job_extraction_method"] = job.extraction_method
     diagnostics["job_text_chars"] = len(job.text)
+    requirements_override = build_requirements_override(
+        role_family=role_family_override,
+        required=required_terms,
+        preferred=preferred_terms,
+        ignored=ignored_terms,
+    )
+    diagnostics["requirement_override_used"] = bool(requirements_override)
 
     web_sources = []
     if research_company_enabled:
@@ -283,6 +323,7 @@ def run_review(
         job_cached_path=job.cached_path,
         web_research=web_sources,
         diagnostics=diagnostics,
+        requirements_override=requirements_override,
     )
     write_json(run_output, payload)
     write_json(latest_output, payload)
@@ -346,6 +387,17 @@ def build_job_preview(job: Any, source_url: str | None = None) -> dict[str, Any]
         "ignored": requirements.get("ignored", [])[:8],
         "responsibilities": requirements.get("responsibilities", [])[:8],
         "term_details": requirements.get("term_details", [])[:12],
+    }
+
+
+def build_requirements_override(*, role_family: str, required: str, preferred: str, ignored: str) -> dict[str, Any] | None:
+    if not any(value.strip() for value in (role_family, required, preferred, ignored)):
+        return None
+    return {
+        "role_family": role_family.strip(),
+        "required": required,
+        "preferred": preferred,
+        "ignored": ignored,
     }
 
 
@@ -484,6 +536,10 @@ def render(
         "memory_note": "",
         "memory_tags": "",
         "memory_query": "",
+        "role_family_override": "",
+        "required_terms": "",
+        "preferred_terms": "",
+        "ignored_terms": "",
         "top_k": 8,
     }
     if form:
