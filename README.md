@@ -94,23 +94,63 @@ change the CV-vs-JD result.
 
 ## Hermes Multi-Agent Flow
 
-When NVIDIA chat is configured, `brief` runs a structured specialist chain:
+When NVIDIA chat is configured, `brief` runs Hermes as a structured specialist
+chain. The point is not to let an LLM invent a score. The deterministic scorer
+already produced the score, verdict, gaps, and evidence depth. Hermes receives
+that brief and asks separate agents to audit different parts of the decision.
 
-1. `jd_analyst`: extracts role intent, hard requirements, seniority, and JD
-   screening risks.
-2. `cv_match`: audits only the selected CV against the JD.
-3. `evidence_miner`: searches project and experience evidence for safe CV
-   improvements.
-4. `claim_verifier`: checks generated CV bullets for unsupported tools,
-   invented metrics, exaggerated deployment claims, or unsafe wording.
-5. `critic`: challenges inflated conclusions and weak evidence.
-6. `contradiction_judge`: compares agents against the deterministic score,
-   verdict, gaps, and claim-verifier findings.
-7. `final_synthesizer`: produces the brutally honest final recommendation.
+```mermaid
+flowchart TD
+    S[Deterministic brief context<br/>score, verdict, JD requirements, evidence]
 
-Each agent returns a schema-checked JSON object with `conclusion`, `findings`,
-`risks`, `recommendations`, and `confidence`. The UI exposes the full agent
-trace, schema errors, latency, contradiction findings, and consensus summary.
+    S --> JD[Agent 1: JD Analyst<br/>id: jd_analyst<br/>input: JD + parsed requirements<br/>job: role intent, hard requirements, screening risks]
+    S --> CV[Agent 2: CV Match Agent<br/>id: cv_match<br/>input: selected CV only<br/>job: current CV-vs-JD audit, no project credit]
+    S --> EV[Agent 3: Evidence Miner Agent<br/>id: evidence_miner<br/>input: project + experience evidence<br/>job: find safe hidden evidence for CV improvement]
+    S --> CL[Agent 4: Claim Verifier Agent<br/>id: claim_verifier<br/>input: draft bullets + source chunks<br/>job: flag unsupported tools, metrics, deployment claims]
+
+    JD --> CR[Agent 5: Critic Agent<br/>id: critic<br/>input: prior agents + deterministic evidence<br/>job: challenge inflated conclusions and weak reasoning]
+    CV --> CR
+    EV --> CR
+    CL --> CR
+
+    CR --> CJ[Agent 6: Contradiction Judge Agent<br/>id: contradiction_judge<br/>input: score, verdict, gaps, claim checks, prior agents<br/>job: detect conflicts with deterministic scoring]
+    CJ --> FN[Agent 7: Final Synthesizer Agent<br/>id: final_synthesizer<br/>input: all prior outputs + deterministic score<br/>job: brutally honest recommendation without changing score]
+    FN --> O[Agent consensus<br/>fit summary, risks, next actions, contradiction count]
+```
+
+The key reliability design is separation of authority:
+
+- The deterministic scorer owns the numeric score.
+- The CV Match Agent can only evaluate the selected CV, so it cannot inflate
+  the score using project notes.
+- The Evidence Miner Agent can find project or experience evidence for future
+  CV improvements, but it cannot claim that the current CV already contains it.
+- The Claim Verifier Agent prevents generated CV bullets from inventing tools,
+  metrics, production deployment, or seniority.
+- The Critic and Contradiction Judge Agents act as reliability checks. If the
+  final recommendation sounds too positive compared with the score, gaps, or
+  claim-verifier output, they flag the mismatch.
+- The Final Synthesizer Agent writes the human-readable recommendation, but it
+  still cannot override the deterministic score.
+
+This makes the system more auditable than a single chatbot prompt: every agent
+has a limited input scope, every output is stored in `agent_trace`, and the UI
+shows failures, schema errors, latency, and contradictions.
+
+Each agent returns a schema-checked JSON object:
+
+```json
+{
+  "conclusion": "Short audit conclusion",
+  "findings": ["Evidence-backed observation"],
+  "risks": ["Known gap or overclaiming risk"],
+  "recommendations": ["Concrete next action"],
+  "confidence": 0.82
+}
+```
+
+The UI exposes the full agent trace, schema errors, latency, contradiction
+findings, and consensus summary.
 
 ## Quickstart
 
