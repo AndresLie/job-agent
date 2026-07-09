@@ -42,6 +42,8 @@ SKILL_ALIASES = {
     "forecasting": {"forecast", "forecasting", "time series"},
     "guardrails": {"guardrail", "guardrails", "safety"},
     "incident_management": {"incident", "incident management", "problem management", "itsm", "servicenow"},
+    "javascript": {"javascript", "java script", "js"},
+    "git": {"git", "gitlab"},
     "kubernetes": {"kubernetes", "k8s"},
     "linux": {"linux"},
     "llm": {"llm", "llms", "large language model", "large language models", "gemma", "gpt"},
@@ -49,6 +51,10 @@ SKILL_ALIASES = {
     "mes": {"mes", "manufacturing execution system", "manufacturing execution systems"},
     "monitoring": {"monitoring", "alerting", "logging", "splunk"},
     "mlops": {"mlops", "ci cd", "monitoring", "model registry"},
+    "nodejs": {"nodejs", "node.js", "node js"},
+    "nosql": {"nosql", "no sql", "mongodb", "mongo", "cassandra", "dynamodb", "redis", "iotdb"},
+    "oop": {"object oriented", "object-oriented", "oop"},
+    "openshift": {"openshift", "open shift"},
     "oracle": {"oracle"},
     "pandas": {"pandas", "dataframe", "dataframes"},
     "perl": {"perl"},
@@ -66,9 +72,22 @@ SKILL_ALIASES = {
     "statistics": {"statistics", "statistical", "stats", "probability"},
     "tensorflow": {"tensorflow", "keras"},
     "troubleshooting": {"troubleshoot", "troubleshooting", "debugging", "problem identification", "problem resolution"},
+    "typescript": {"typescript", "type script", "ts"},
     "unix": {"unix"},
     "vector_search": {"vector search", "vector database", "vector store", "faiss", "pinecone", "qdrant"},
     "windows": {"windows", "windows server"},
+    "angular": {"angular", "angularjs", "angular.js"},
+    "apache": {"apache"},
+    "code_generation_tools": {
+        "github copilot",
+        "copilot",
+        "claude code",
+        "cursor",
+        "tabnine",
+        "code generation",
+        "code-generation",
+    },
+    "dotnet": {".net", "dotnet", "asp.net"},
 }
 
 ROLE_HINTS = {
@@ -83,15 +102,18 @@ ROLE_HINTS = {
         "forecast",
         "business metrics",
     },
-    "ai_engineer": {"ai engineer", "genai", "generative ai", "rag", "llm", "agent", "prompt"},
+    "ai_engineer": {"ai engineer", "generative ai engineer", "rag", "llm", "agent", "prompt"},
     "ml_engineer": {"ml engineer", "machine learning engineer", "deployment", "mlops", "serving", "kubernetes"},
     "manufacturing_it": {
         "manufacturing it",
         "mes",
         "manufacturing execution",
         "semiconductor manufacturing",
+        "photolithography",
         "fabs",
         "fab",
+        "smart manufacturing",
+        "smart mfg",
         "incident management",
         "problem management",
         "production support",
@@ -104,11 +126,21 @@ ROLE_HINTS = {
     },
     "software_engineer": {
         "software engineer",
+        "software development engineer",
+        "full-stack",
+        "full stack",
         "software systems",
         "software applications",
         "programming",
         "scripting",
         "database technologies",
+        "restful web services",
+        "web technologies",
+        "nodejs",
+        "node.js",
+        ".net",
+        "angular",
+        "typescript",
         "linux",
         "windows",
     },
@@ -224,8 +256,21 @@ ROLE_TERM_WEIGHTS = {
         "api": 1.1,
         "deployment": 1.0,
         "sql": 1.0,
+        "nosql": 0.95,
         "csharp": 1.0,
         "cpp": 1.0,
+        "nodejs": 1.05,
+        "apache": 0.9,
+        "dotnet": 1.05,
+        "angular": 1.0,
+        "typescript": 1.0,
+        "javascript": 0.95,
+        "git": 0.9,
+        "oop": 0.95,
+        "docker": 0.9,
+        "kubernetes": 0.9,
+        "openshift": 0.85,
+        "code_generation_tools": 0.55,
         "python": 0.95,
         "linux": 0.9,
         "windows": 0.85,
@@ -235,6 +280,20 @@ ROLE_TERM_WEIGHTS = {
         "dashboard": 0.45,
     },
     "general_ai_data": {},
+}
+CORE_STACK_TERMS = {
+    "nodejs",
+    "apache",
+    "csharp",
+    "dotnet",
+    "angular",
+    "typescript",
+    "javascript",
+    "api",
+    "sql",
+    "nosql",
+    "git",
+    "oop",
 }
 SECTION_WEIGHT = {
     "required": 1.0,
@@ -259,6 +318,7 @@ def analyze_job_requirements(job_text: str) -> dict:
     )
     responsibilities = sorted(extract_responsibilities_by_section(sections))
     ignored = sorted(term for term, detail in term_details.items() if detail["weight"] < MIN_REQUIRED_WEIGHT and detail["strength"] != "preferred")
+    requirement_groups = build_requirement_groups(sections, term_details)
     return {
         "role_family": role_family,
         "required": required,
@@ -266,6 +326,7 @@ def analyze_job_requirements(job_text: str) -> dict:
         "context": context,
         "ignored": ignored,
         "responsibilities": responsibilities,
+        "requirement_groups": requirement_groups,
         "term_details": [term_details[term] for term in sorted(term_details)],
         "term_weights": {term: detail["weight"] for term, detail in term_details.items()},
         "all_terms": sorted(set(required) | set(preferred) | set(context) | set(responsibilities)),
@@ -311,9 +372,10 @@ def score_with_rubric(requirements: dict, depth: dict, resume_hits: list[dict]) 
     preferred_covered = credible_terms(preferred, by_term)
     responsibility_covered = credible_terms(responsibilities, by_term)
 
-    required_component = 45 * weighted_ratio(required_covered, required, term_weights)
+    required_units = requirement_units(requirements, "required")
+    required_component = 45 * weighted_unit_ratio(required_covered, required_units, term_weights)
     responsibility_component = 20 * weighted_ratio(responsibility_covered, responsibilities or required, term_weights)
-    depth_component = 20 * weighted_average_depth(required, by_term, term_weights)
+    depth_component = 20 * weighted_average_unit_depth(required_units, by_term, term_weights)
     impact_component = 10 * quantified_impact_score(resume_hits)
     preferred_component = 5 * ratio(len(preferred_covered), len(preferred))
     raw_score = round(
@@ -323,23 +385,22 @@ def score_with_rubric(requirements: dict, depth: dict, resume_hits: list[dict]) 
         + impact_component
         + preferred_component
     )
+    cap = score_cap(requirements, by_term)
     fit_score = min(100, max(0, raw_score))
+    if cap["cap"] is not None:
+        fit_score = min(fit_score, cap["cap"])
 
     return {
         "fit_score": fit_score,
         "matched_terms": sorted(mentioned_required | mentioned_preferred),
         "credible_matched_terms": sorted(required_covered | preferred_covered),
-        "missing_from_cv": sorted(term for term in set(required) | set(preferred) if cv_depth(term, by_term) == "none"),
+        "missing_from_cv": missing_terms_for_units(requirements, by_term, include_preferred=True),
         "hidden_terms": sorted(
             term
-            for term in set(required) | set(preferred)
+            for term in set(missing_terms_for_units(requirements, by_term, include_preferred=True))
             if cv_depth(term, by_term) == "none" and supporting_depth(term, by_term) != "none"
         ),
-        "skill_gaps": sorted(
-            term
-            for term in set(required) | set(preferred)
-            if cv_depth(term, by_term) == "none" and supporting_depth(term, by_term) == "none"
-        ),
+        "skill_gaps": skill_gap_terms(requirements, by_term),
         "weak_evidence": depth.get("weak_evidence", []),
         "scoring_breakdown": {
             "required_skill_coverage": round(required_component, 2),
@@ -349,6 +410,10 @@ def score_with_rubric(requirements: dict, depth: dict, resume_hits: list[dict]) 
             "preferred_coverage": round(preferred_component, 2),
             "credible_required_matches": len(required_covered),
             "mentioned_required_matches": len(mentioned_required),
+            "raw_score_before_caps": raw_score,
+            "score_cap": cap["cap"],
+            "score_cap_reason": cap["reason"],
+            "missing_core_stack_groups": cap["missing_groups"],
         },
     }
 
@@ -358,10 +423,26 @@ def known_skill_terms() -> set[str]:
 
 
 def detect_role_family(text: str) -> str:
-    scores = {
-        role: sum(1 for hint in hints if phrase_in_text(hint, text))
-        for role, hints in ROLE_HINTS.items()
-    }
+    lead_text = text[:350]
+    scores = {role: 0.0 for role in ROLE_HINTS}
+    for role, hints in ROLE_HINTS.items():
+        for hint in hints:
+            if phrase_in_text(hint, text):
+                scores[role] += 1.0
+            if phrase_in_text(hint, lead_text):
+                scores[role] += 1.5
+    if phrase_in_text("software development engineer", lead_text) or phrase_in_text("full-stack software", text):
+        scores["software_engineer"] += 4.0
+    if phrase_in_text("ai engineer", lead_text) or phrase_in_text("machine learning engineer", lead_text):
+        scores["ai_engineer"] += 4.0
+    if phrase_in_text("data scientist", lead_text):
+        scores["data_scientist"] += 4.0
+    if phrase_in_text("smart mfg/ai", text) or phrase_in_text("smart mfg", text):
+        scores["manufacturing_it"] += 2.0
+        scores["ai_engineer"] -= 1.0
+    if phrase_in_text("generative ai tools", text) or phrase_in_text("code generation utilities", text):
+        scores["software_engineer"] += 1.0
+        scores["ai_engineer"] += 0.25
     best_role, best_score = max(scores.items(), key=lambda item: item[1])
     return best_role if best_score else "general_ai_data"
 
@@ -381,7 +462,7 @@ def split_job_sections(job_text: str) -> list[dict]:
                 sections.append(current)
             current = {"section": section, "heading": heading, "text": inline_text}
             continue
-        current["text"] += " " + line
+        current["text"] += "\n" + line
     if current["text"].strip():
         sections.append(current)
     if not sections:
@@ -435,6 +516,42 @@ def build_term_details(sections: list[dict], role_family: str) -> dict[str, dict
     return details
 
 
+def build_requirement_groups(sections: list[dict], term_details: dict[str, dict]) -> list[dict]:
+    groups = []
+    seen = set()
+    for section in sections:
+        section_type = section.get("section", "context")
+        if section_type not in {"required", "responsibility", "preferred"}:
+            continue
+        for sentence in split_sentences(section.get("text", "")):
+            sentence = normalize(sentence)
+            terms = sorted(extract_skills(sentence) & set(term_details))
+            if len(terms) < 2:
+                continue
+            operator = "any" if has_choice_marker(sentence) else "all"
+            if operator != "any":
+                continue
+            strength = "preferred" if section_type == "preferred" else "required"
+            key = (operator, strength, tuple(terms))
+            if key in seen:
+                continue
+            seen.add(key)
+            groups.append(
+                {
+                    "id": f"{strength}_{operator}_{len(groups) + 1}",
+                    "operator": operator,
+                    "strength": strength,
+                    "terms": terms,
+                    "text": sentence[:220],
+                }
+            )
+    return groups
+
+
+def has_choice_marker(sentence: str) -> bool:
+    return any(marker in sentence for marker in {" or ", " either ", " any of ", " such as "})
+
+
 def term_weight(term: str, role_family: str, section: str) -> float:
     return round(role_term_weight(term, role_family) * SECTION_WEIGHT.get(section, 0.2), 3)
 
@@ -466,6 +583,8 @@ def extract_skills(text: str) -> set[str]:
     found = set()
     token_set = keyword_tokens(text)
     for skill, aliases in SKILL_ALIASES.items():
+        if skill == "apache" and not apache_web_context(text):
+            continue
         if skill in token_set or any(phrase_in_text(alias, text) for alias in aliases):
             found.add(skill)
     return found
@@ -537,8 +656,22 @@ def has_quantified_impact(text: str) -> bool:
 
 
 def term_in_text(term: str, text: str) -> bool:
+    if term == "apache" and not apache_web_context(text):
+        return False
     aliases = SKILL_ALIASES.get(term) or RESPONSIBILITY_ALIASES.get(term) or {term}
     return term in keyword_tokens(text) or any(phrase_in_text(alias, text) for alias in aliases)
+
+
+def apache_web_context(text: str) -> bool:
+    normalized = normalize(text)
+    if not phrase_in_text("apache", normalized):
+        return False
+    if any(phrase_in_text(marker, normalized) for marker in {"web service", "web server", "http", "httpd", "restful"}):
+        return True
+    return not any(
+        phrase_in_text(marker, normalized)
+        for marker in {"apache kafka", "apache iotdb", "apache spark", "apache airflow", "apache flink"}
+    )
 
 
 def covered_terms(terms: Iterable[str], by_term: dict) -> set[str]:
@@ -567,6 +700,115 @@ def weighted_ratio(covered: Iterable[str], terms: Iterable[str], weights: dict[s
     total = sum(term_score_weight(term, weights) for term in term_list)
     earned = sum(term_score_weight(term, weights) for term in term_list if term in covered_set)
     return earned / total if total else 0.0
+
+
+def requirement_units(requirements: dict, strength: str) -> list[dict]:
+    terms = requirements.get(strength) or []
+    groups = [
+        group
+        for group in requirements.get("requirement_groups", [])
+        if group.get("strength") == strength and group.get("operator") == "any"
+    ]
+    grouped_terms = {term for group in groups for term in group.get("terms", [])}
+    units = [
+        {
+            "operator": "any",
+            "terms": list(group.get("terms", [])),
+            "id": group.get("id", ""),
+            "text": group.get("text", ""),
+        }
+        for group in groups
+    ]
+    units.extend({"operator": "all", "terms": [term], "id": term, "text": term} for term in terms if term not in grouped_terms)
+    return [unit for unit in units if unit["terms"]]
+
+
+def weighted_unit_ratio(covered: Iterable[str], units: list[dict], weights: dict[str, float]) -> float:
+    if not units:
+        return 0.0
+    covered_set = set(covered)
+    total = sum(unit_weight(unit, weights) for unit in units)
+    earned = sum(unit_weight(unit, weights) for unit in units if unit_is_covered(unit, covered_set))
+    return earned / total if total else 0.0
+
+
+def weighted_average_unit_depth(units: list[dict], by_term: dict, weights: dict[str, float]) -> float:
+    if not units:
+        return 0.0
+    total = sum(unit_weight(unit, weights) for unit in units)
+    earned = 0.0
+    for unit in units:
+        terms = unit.get("terms", [])
+        if unit.get("operator") == "any":
+            depth = max((cv_depth(term, by_term) for term in terms), key=lambda item: DEPTH_ORDER.get(item, 0))
+            earned += DEPTH_POINTS[depth] * unit_weight(unit, weights)
+        else:
+            earned += min(DEPTH_POINTS[cv_depth(term, by_term)] for term in terms) * unit_weight(unit, weights)
+    return earned / total if total else 0.0
+
+
+def unit_is_covered(unit: dict, covered_set: set[str]) -> bool:
+    terms = set(unit.get("terms", []))
+    if not terms:
+        return False
+    if unit.get("operator") == "any":
+        return bool(terms & covered_set)
+    return terms <= covered_set
+
+
+def unit_weight(unit: dict, weights: dict[str, float]) -> float:
+    values = [term_score_weight(term, weights) for term in unit.get("terms", [])]
+    if not values:
+        return 0.0
+    if unit.get("operator") == "any":
+        return max(values)
+    return sum(values)
+
+
+def missing_terms_for_units(requirements: dict, by_term: dict, include_preferred: bool = False) -> list[str]:
+    missing = []
+    strengths = ["required", "preferred"] if include_preferred else ["required"]
+    for strength in strengths:
+        units = requirement_units(requirements, strength)
+        for unit in units:
+            if unit_is_covered(unit, covered_terms(unit.get("terms", []), by_term)):
+                continue
+            missing.extend(term for term in unit.get("terms", []) if cv_depth(term, by_term) == "none")
+    return sorted(set(missing))
+
+
+def skill_gap_terms(requirements: dict, by_term: dict) -> list[str]:
+    gaps = []
+    for term in missing_terms_for_units(requirements, by_term, include_preferred=True):
+        if supporting_depth(term, by_term) == "none":
+            gaps.append(term)
+    return sorted(set(gaps))
+
+
+def score_cap(requirements: dict, by_term: dict) -> dict:
+    if requirements.get("role_family") not in {"software_engineer", "manufacturing_it"}:
+        return {"cap": None, "reason": "", "missing_groups": []}
+    missing_groups = []
+    for unit in requirement_units(requirements, "required"):
+        terms = set(unit.get("terms", []))
+        if not terms & CORE_STACK_TERMS:
+            continue
+        covered = credible_terms(terms, by_term)
+        if unit_is_covered(unit, covered):
+            continue
+        missing_groups.append("/".join(unit.get("terms", [])))
+    if len(missing_groups) >= 4:
+        cap = 40
+    elif len(missing_groups) >= 3:
+        cap = 45
+    elif len(missing_groups) >= 2:
+        cap = 55
+    else:
+        cap = None
+    reason = ""
+    if cap is not None:
+        reason = "Score capped because the current CV misses multiple core software stack requirement groups."
+    return {"cap": cap, "reason": reason, "missing_groups": missing_groups}
 
 
 def weighted_average_depth(terms: list[str], by_term: dict, weights: dict[str, float]) -> float:

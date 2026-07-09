@@ -121,6 +121,64 @@ def test_micron_mes_jd_extracts_manufacturing_it_requirements():
     assert "rag" not in requirements["required"]
 
 
+def test_full_stack_software_jd_is_not_ai_engineer_from_department_label():
+    requirements = analyze_job_requirements(
+        """
+        SOFTWARE DEVELOPMENT ENGINEER
+        Department: Smart MFG/AI
+        Qualifications and Skills:
+        Developing restful web services using NodeJS, Apache or C#
+        Object Oriented Programming preferably .NET
+        SQL and NoSQL databases
+        Angular, TypeScript, JavaScript, and other Web technologies
+        Git
+        Docker, Kubernetes, OpenShift, or other container technologies
+        GitHub Copilot or other Code Generation Utilities
+        """
+    )
+
+    assert requirements["role_family"] == "software_engineer"
+    assert {
+        "nodejs",
+        "apache",
+        "csharp",
+        "dotnet",
+        "angular",
+        "typescript",
+        "javascript",
+        "git",
+        "docker",
+        "kubernetes",
+        "openshift",
+        "code_generation_tools",
+    } <= set(requirements["required"])
+    assert any({"nodejs", "apache", "csharp"} <= set(group["terms"]) for group in requirements["requirement_groups"])
+    assert any({"docker", "kubernetes", "openshift"} <= set(group["terms"]) for group in requirements["requirement_groups"])
+
+
+def test_core_stack_gap_caps_infrastructure_only_cv():
+    requirements = analyze_job_requirements(
+        """
+        Software Development Engineer
+        Requirements:
+        Developing restful web services using NodeJS, Apache or C#
+        Object Oriented Programming preferably .NET
+        SQL and NoSQL databases
+        Angular, TypeScript, JavaScript, and other Web technologies
+        Git
+        Docker, Kubernetes, OpenShift, or other container technologies
+        """
+    )
+    resume_hits = [hit("Built SQL platforms with Docker and Kubernetes and improved throughput by 30%.")]
+    depth = analyze_evidence_depth(requirements, resume_hits, [])
+    score = score_with_rubric(requirements, depth, resume_hits)
+
+    assert score["fit_score"] <= 45
+    assert score["scoring_breakdown"]["score_cap"] <= 45
+    assert "dotnet" in score["skill_gaps"]
+    assert "angular" in score["skill_gaps"]
+
+
 def test_shallow_mentions_do_not_score_as_strong_match():
     requirements = analyze_job_requirements("AI Engineer using Python, RAG, retrieval, and evaluation.")
     depth = analyze_evidence_depth(

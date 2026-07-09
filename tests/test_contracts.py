@@ -3,7 +3,7 @@ from career_copilot.contracts import validate_brief
 
 def test_validate_brief_accepts_valid_payload():
     payload = {
-        "schema_version": "1.2",
+        "schema_version": "1.3",
         "job_title": "AI Engineer",
         "fit_score": 80,
         "role_family": "ai_engineer",
@@ -43,6 +43,12 @@ def test_validate_brief_accepts_valid_payload():
             "reason": "Strong evidence.",
         },
         "cv_rewrite_suggestions": [],
+        "cv_improvement_review": {
+            "direct_suggestions": [],
+            "adjacent_recommendations": [],
+            "no_evidence_gaps": [],
+            "summary": "No project or experience evidence changed the CV improvement plan.",
+        },
         "skill_gaps": [],
         "recommended_actions": [],
         "citations": [],

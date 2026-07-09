@@ -95,6 +95,9 @@ score. When Exa sources are available, the result includes an advisory company
 context and requirement-weighting review that flags externally corroborated
 requirements, weakly supported requirements, and possible stack migration
 signals.
+The parser also tracks grouped requirements such as "NodeJS, Apache or C#",
+so alternative stacks are scored as choices instead of separate mandatory
+requirements.
 The output also includes an application verdict and grounded CV bullet
 suggestions, so weak evidence can produce a blunt "do not apply yet" result.
 The score is a role-aware rubric, not a hiring probability: it considers
@@ -361,6 +364,7 @@ object with:
 - `skill_gaps`
 - `application_verdict`
 - `cv_rewrite_suggestions`
+- `cv_improvement_review`
 - `recommended_actions`
 - `brutal_assessment`
 - `llm_brutal_review`

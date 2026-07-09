@@ -39,7 +39,7 @@ def test_generate_brief_has_required_fields(tmp_path):
     job.write_text("# AI Engineer\nPython retrieval evaluation BM25", encoding="utf-8")
     brief = generate_brief(job, store, embedder, memory)
     assert brief["job_title"] == "AI Engineer"
-    assert brief["schema_version"] == "1.2"
+    assert brief["schema_version"] == "1.3"
     assert brief["matched_evidence"]
     assert brief["score_explanations"]
     assert brief["company_context_review"]["status"] == "no_external_sources"
@@ -347,6 +347,42 @@ def test_cv_rewrite_suggestions_are_grounded_in_supporting_evidence(tmp_path, mo
     assert suggestion["claim_verification"]["status"] == "supported"
     assert isinstance(suggestion["chunk_index"], int)
     assert "Quantify impact if true." in suggestion["bullet"]
+
+
+def test_cv_improvement_review_separates_adjacent_and_no_evidence_gaps(tmp_path, monkeypatch):
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    embedder = HashingEmbedder()
+    store = JsonVectorStore(tmp_path / "vectors.json")
+    memory = MemoryStore(tmp_path / "memory.json")
+
+    for folder, filename, text in [
+        ("resume", "cv.md", "Built Docker Kubernetes SQL telemetry systems with measured throughput gains."),
+        (
+            "projects",
+            "reliability.md",
+            "Implemented reliability validation for failure scenarios, restore workflows, and issue diagnostics.",
+        ),
+    ]:
+        path = tmp_path / folder / filename
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        store.upsert_chunks(chunk_document(path, text, root=tmp_path), embedder)
+
+    brief = generate_brief(
+        None,
+        store,
+        embedder,
+        memory,
+        job_text="# Software Engineer\nRequired: C# production support troubleshooting Docker Kubernetes SQL.",
+        job_title="Software Engineer",
+    )
+
+    adjacent_terms = {item["term"] for item in brief["cv_improvement_review"]["adjacent_recommendations"]}
+    no_evidence_terms = {item["term"] for item in brief["cv_improvement_review"]["no_evidence_gaps"]}
+
+    assert {"production_support", "troubleshooting"} <= adjacent_terms
+    assert "csharp" in no_evidence_terms
+    assert all(item["status"] == "adjacent_needs_manual_validation" for item in brief["cv_improvement_review"]["adjacent_recommendations"])
 
 
 def test_claim_verifier_flags_unsupported_impact_language():

@@ -291,6 +291,7 @@
             {% set active_resume = result.active_resume | default({}) %}
             {% set cv_rankings = result.cv_rankings | default([]) %}
             {% set company_context = result.company_context_review | default({}) %}
+            {% set improvement_review = result.cv_improvement_review | default({}) %}
             <header class="result-header">
               <div>
                 <p class="eyebrow">{{ result.role_family | default("general_ai_data") }}</p>
@@ -302,6 +303,16 @@
               </div>
             </header>
 
+            <nav class="result-tabs" aria-label="Review result sections" data-tabs>
+              <button type="button" class="tab-button is-active" data-tab-target="overview">Overview</button>
+              <button type="button" class="tab-button" data-tab-target="jd-score">JD & Score</button>
+              <button type="button" class="tab-button" data-tab-target="improve">CV Improvements</button>
+              <button type="button" class="tab-button" data-tab-target="agents">Agents</button>
+              <button type="button" class="tab-button" data-tab-target="diagnostics">Diagnostics</button>
+            </nav>
+
+            <div class="tab-panels" data-tab-panels>
+            <div class="tab-panel is-active" data-tab-panel="overview">
             <section class="section-block priority-section">
               <p class="eyebrow">Step 1</p>
               <h3>CV vs JD Review</h3>
@@ -437,6 +448,8 @@
               </div>
             </section>
 
+            </div>
+            <div class="tab-panel" data-tab-panel="jd-score" hidden>
             <section class="section-block">
               <h3>JD Signals</h3>
               <div class="signal-grid">
@@ -490,6 +503,19 @@
                   {% endif %}
                 </div>
               </div>
+              {% if result.jd_requirements.requirement_groups %}
+                <div class="term-detail-list">
+                  {% for group in result.jd_requirements.requirement_groups %}
+                    <article class="term-detail">
+                      <div>
+                        <strong>{{ group.operator | upper }} group</strong>
+                        <span>{{ group.strength }} - {{ group.terms | join(", ") }}</span>
+                      </div>
+                      <p>{{ group.text }}</p>
+                    </article>
+                  {% endfor %}
+                </div>
+              {% endif %}
               {% if result.jd_requirements.term_details %}
                 <div class="term-detail-list">
                   {% for item in result.jd_requirements.term_details %}
@@ -575,7 +601,9 @@
                       <span>{{ label | replace("_", " ") | title }}</span>
                       <strong>{{ value }}</strong>
                     </div>
-                    <div class="bar"><span style="width: {{ value }}%;"></span></div>
+                    {% if value is number %}
+                      <div class="bar"><span style="width: {{ [value, 100] | min }}%;"></span></div>
+                    {% endif %}
                   </div>
                 {% endfor %}
               </div>
@@ -620,6 +648,8 @@
               {% endif %}
             </section>
 
+            </div>
+            <div class="tab-panel" data-tab-panel="improve" hidden>
             <section class="section-grid">
               <div class="section-block">
                 <h3>Weak Evidence</h3>
@@ -651,6 +681,9 @@
             <section class="section-block">
               <p class="eyebrow">Step 2</p>
               <h3>CV Rewrite Suggestions</h3>
+              {% if improvement_review.summary %}
+                <p>{{ improvement_review.summary }}</p>
+              {% endif %}
               {% if result.cv_rewrite_suggestions %}
                 <div class="suggestion-list">
                   {% for item in result.cv_rewrite_suggestions %}
@@ -707,6 +740,45 @@
               {% endif %}
             </section>
 
+            <section class="section-block">
+              <h3>Conservative Evidence Review</h3>
+              <div class="section-grid">
+                <div>
+                  <strong>Adjacent Evidence</strong>
+                  {% if improvement_review.adjacent_recommendations %}
+                    <ul class="compact-list">
+                      {% for item in improvement_review.adjacent_recommendations %}
+                        <li>
+                          <strong>{{ item.term }}</strong>
+                          <span>{{ item.recommendation }}</span>
+                          <span>{{ item.source_category }}/{{ item.source_path }} chunk {{ item.chunk_index }}</span>
+                        </li>
+                      {% endfor %}
+                    </ul>
+                  {% else %}
+                    <p class="muted">No adjacent-but-risky evidence found.</p>
+                  {% endif %}
+                </div>
+                <div>
+                  <strong>Do Not Claim Yet</strong>
+                  {% if improvement_review.no_evidence_gaps %}
+                    <ul class="compact-list">
+                      {% for item in improvement_review.no_evidence_gaps %}
+                        <li>
+                          <strong>{{ item.term }}</strong>
+                          <span>{{ item.recommendation }}</span>
+                        </li>
+                      {% endfor %}
+                    </ul>
+                  {% else %}
+                    <p class="muted">No unsupported CV claims were flagged.</p>
+                  {% endif %}
+                </div>
+              </div>
+            </section>
+
+            </div>
+            <div class="tab-panel" data-tab-panel="agents" hidden>
             <section class="section-block">
               <h3>Brutal Assessment</h3>
               <p>{{ result.brutal_assessment }}</p>
@@ -790,6 +862,8 @@
               {% endif %}
             </section>
 
+            </div>
+            <div class="tab-panel" data-tab-panel="diagnostics" hidden>
             <section class="section-block">
               <h3>Review Diagnostics</h3>
               <div class="diagnostics-grid">
@@ -842,6 +916,8 @@
                 {% endfor %}
               </div>
             </section>
+            </div>
+            </div>
           {% else %}
             <div class="empty-state">
               <h2>No review yet</h2>
@@ -851,6 +927,6 @@
         </section>
       </section>
     </main>
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=20260709-tabs"></script>
   </body>
 </html>

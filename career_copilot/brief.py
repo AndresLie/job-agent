@@ -16,6 +16,17 @@ from .vector_store import JsonVectorStore, keyword_tokens
 
 RESUME_CATEGORIES = {"resume"}
 SUPPORTING_CATEGORIES = {"projects", "experience"}
+ADJACENT_EVIDENCE_MARKERS = {
+    "production_support": {"reliability", "failure", "restore", "incident", "uptime", "operational", "maintenance"},
+    "troubleshooting": {"debug", "failure", "root cause", "restore", "diagnosed", "issue", "problem", "validation"},
+    "nodejs": {"backend", "api", "restful", "javascript", "web service"},
+    "apache": {"web server", "http server", "backend", "api"},
+    "dotnet": {"c#", "csharp", "enterprise application"},
+    "angular": {"frontend", "front-end", "ui", "react", "vue", "web application"},
+    "typescript": {"javascript", "frontend", "react", "next.js", "web application"},
+    "javascript": {"frontend", "front-end", "web application", "react", "next.js"},
+    "code_generation_tools": {"copilot", "cursor", "claude code", "tabnine", "ai coding", "code generation"},
+}
 
 
 def generate_brief(
@@ -83,6 +94,12 @@ def generate_brief(
     fit_score = rubric_result["fit_score"]
     application_verdict = build_application_verdict(fit_score, hidden_terms, gaps, weak_evidence, resume_hits)
     cv_rewrite_suggestions = build_cv_rewrite_suggestions(supporting_hits, hidden_terms)
+    cv_improvement_review = build_cv_improvement_review(
+        supporting_hits=supporting_hits,
+        hidden_terms=hidden_terms,
+        gaps=gaps,
+        cv_rewrite_suggestions=cv_rewrite_suggestions,
+    )
     score_explanations = build_score_explanations(
         requirements=requirements,
         scoring_breakdown=rubric_result["scoring_breakdown"],
@@ -146,7 +163,7 @@ def generate_brief(
     )
     all_citation_hits = resume_hits + supporting_hits
     payload = {
-        "schema_version": "1.2",
+        "schema_version": "1.3",
         "job_title": resolved_job_title,
         "job_input": {
             "source_type": job_source_type,
@@ -185,6 +202,7 @@ def generate_brief(
         "skill_gaps": gaps,
         "application_verdict": application_verdict,
         "cv_rewrite_suggestions": cv_rewrite_suggestions,
+        "cv_improvement_review": cv_improvement_review,
         "recommended_actions": build_actions(gaps, hidden_terms, supporting_hits, resume_hits),
         "brutal_assessment": brutal_assessment,
         "llm_brutal_review": llm_review,
@@ -556,6 +574,95 @@ def build_cv_rewrite_suggestions(hits: list[dict], hidden_terms: list[str]) -> l
     return suggestions
 
 
+def build_cv_improvement_review(
+    *,
+    supporting_hits: list[dict],
+    hidden_terms: list[str],
+    gaps: list[str],
+    cv_rewrite_suggestions: list[dict],
+) -> dict:
+    direct_terms = sorted({term for item in cv_rewrite_suggestions for term in item.get("target_terms", [])})
+    adjacent = build_adjacent_recommendations(supporting_hits, gaps, set(direct_terms))
+    adjacent_terms = {item["term"] for item in adjacent}
+    no_evidence = [
+        {
+            "term": term,
+            "status": "no_supporting_evidence",
+            "recommendation": f"Do not claim {term} in the CV unless you can add real evidence from work, projects, or coursework.",
+        }
+        for term in gaps
+        if term not in set(direct_terms) | adjacent_terms
+    ]
+    return {
+        "direct_suggestions": cv_rewrite_suggestions,
+        "adjacent_recommendations": adjacent,
+        "no_evidence_gaps": no_evidence,
+        "summary": build_improvement_summary(direct_terms, adjacent, no_evidence),
+    }
+
+
+def build_adjacent_recommendations(
+    supporting_hits: list[dict],
+    gaps: list[str],
+    direct_terms: set[str],
+) -> list[dict]:
+    recommendations = []
+    for term in gaps:
+        if term in direct_terms:
+            continue
+        markers = ADJACENT_EVIDENCE_MARKERS.get(term, set())
+        if not markers:
+            continue
+        for hit in supporting_hits:
+            text = re.sub(r"\s+", " ", hit.get("text", "")).strip()
+            normalized = text.casefold()
+            matched_markers = sorted(marker for marker in markers if marker in normalized)
+            if not matched_markers:
+                continue
+            recommendations.append(
+                {
+                    "term": term,
+                    "status": "adjacent_needs_manual_validation",
+                    "matched_markers": matched_markers[:5],
+                    "source_category": hit.get("category", "general"),
+                    "source_path": hit.get("source_path", hit.get("filename", "")),
+                    "chunk_index": hit["chunk_index"],
+                    "evidence_excerpt": trim_sentence(text, 260),
+                    "recommendation": (
+                        f"Use this only as adjacent evidence for {term}. "
+                        f"Do not claim direct {term} experience unless the exact work is true."
+                    ),
+                }
+            )
+            break
+    return recommendations[:8]
+
+
+def build_improvement_summary(
+    direct_terms: list[str],
+    adjacent: list[dict],
+    no_evidence: list[dict],
+) -> str:
+    parts = []
+    if direct_terms:
+        parts.append("Direct supporting evidence exists for: " + ", ".join(direct_terms[:6]) + ".")
+    if adjacent:
+        parts.append(
+            "Adjacent evidence needs careful wording for: "
+            + ", ".join(item["term"] for item in adjacent[:6])
+            + "."
+        )
+    if no_evidence:
+        parts.append(
+            "No supporting evidence was found for: "
+            + ", ".join(item["term"] for item in no_evidence[:6])
+            + "."
+        )
+    if not parts:
+        return "No project or experience evidence changed the CV improvement plan."
+    return " ".join(parts)
+
+
 def build_cv_bullet(hit: dict, terms: list[str]) -> str:
     category = hit.get("category", "general")
     verb = "Delivered" if category == "experience" else "Built"
@@ -647,7 +754,7 @@ def build_score_explanations(
         if by_term.get(term, {}).get("cv_depth") in {"work_or_internship", "production_or_measurable_impact"}
     ]
     impact_evidence = quantified_impact_evidence(resume_hits)
-    return [
+    explanations = [
         {
             "component": "required_skill_coverage",
             "points": scoring_breakdown.get("required_skill_coverage", 0),
@@ -689,6 +796,18 @@ def build_score_explanations(
             "reason": "Preferred requirements can improve the score, but they do not compensate for missing required evidence.",
         },
     ]
+    if scoring_breakdown.get("score_cap"):
+        explanations.append(
+            {
+                "component": "score_cap",
+                "points": scoring_breakdown.get("score_cap"),
+                "max_points": 100,
+                "evidence": [],
+                "missing": scoring_breakdown.get("missing_core_stack_groups", [])[:10],
+                "reason": scoring_breakdown.get("score_cap_reason"),
+            }
+        )
+    return explanations
 
 
 def quantified_impact_evidence(hits: list[dict]) -> list[str]:
