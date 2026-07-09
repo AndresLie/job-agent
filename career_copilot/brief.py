@@ -45,12 +45,23 @@ def generate_brief(
     )
     jd_comparison_text = clean_text(job_text)
     retrieval_text = clean_text(job_text + "\n\n" + research_text)
-    resume_hits = store.query(jd_comparison_text, embedder, top_k, categories=RESUME_CATEGORIES)
     supporting_hits = store.query(jd_comparison_text, embedder, top_k, categories=SUPPORTING_CATEGORIES)
     memories = [item.summary for item in memory.retrieve(retrieval_text, k=5)]
     requirements = apply_requirements_override(analyze_job_requirements(jd_comparison_text), requirements_override)
-    evidence_depth = analyze_evidence_depth(requirements, resume_hits, supporting_hits)
-    rubric_result = score_with_rubric(requirements, evidence_depth, resume_hits)
+    resume_candidates = rank_resume_candidates(
+        store=store,
+        embedder=embedder,
+        job_text=jd_comparison_text,
+        requirements=requirements,
+        supporting_hits=supporting_hits,
+        top_k=top_k,
+    )
+    active_candidate = resume_candidates[0] if resume_candidates else None
+    resume_hits = active_candidate["hits"] if active_candidate else []
+    evidence_depth = active_candidate["evidence_depth"] if active_candidate else analyze_evidence_depth(requirements, [], supporting_hits)
+    rubric_result = active_candidate["rubric_result"] if active_candidate else score_with_rubric(requirements, evidence_depth, [])
+    cv_rankings = build_cv_rankings(resume_candidates)
+    active_resume = cv_rankings[0] if cv_rankings else {}
     job_terms = set(requirements["required"]) | set(requirements["preferred"])
     resume_terms = collect_terms(resume_hits)
     supporting_terms = collect_terms(supporting_hits)
@@ -113,6 +124,8 @@ def generate_brief(
             "memory_hits": len(memories),
             "memory_summaries": memories[:5],
             "resume_chunks_considered": len(resume_hits),
+            "resume_files_considered": len(cv_rankings),
+            "active_resume": active_resume.get("source_path", ""),
             "supporting_chunks_considered": len(supporting_hits),
             "credible_cv_terms": rubric_result.get("credible_matched_terms", []),
         }
@@ -129,6 +142,8 @@ def generate_brief(
         },
         "fit_score": fit_score,
         "role_family": requirements["role_family"],
+        "active_resume": active_resume,
+        "cv_rankings": cv_rankings,
         "jd_requirements": requirements,
         "evidence_depth": evidence_depth,
         "scoring_breakdown": rubric_result["scoring_breakdown"],
@@ -293,6 +308,78 @@ def collect_terms(hits: list[dict]) -> set[str]:
     for hit in hits:
         terms |= skill_terms(hit["text"])
     return terms
+
+
+def rank_resume_candidates(
+    *,
+    store: JsonVectorStore,
+    embedder: Embedder,
+    job_text: str,
+    requirements: dict,
+    supporting_hits: list[dict],
+    top_k: int,
+) -> list[dict]:
+    resume_count = sum(1 for record in store.records if record.get("category", "general") in RESUME_CATEGORIES)
+    if not resume_count:
+        return []
+    all_resume_hits = store.query(
+        job_text,
+        embedder,
+        top_k=max(resume_count, top_k),
+        categories=RESUME_CATEGORIES,
+    )
+    grouped: dict[str, list[dict]] = {}
+    for hit in all_resume_hits:
+        source_path = hit.get("source_path") or hit.get("filename", "unknown")
+        grouped.setdefault(source_path, []).append(hit)
+
+    candidates = []
+    for source_path, hits in grouped.items():
+        selected_hits = hits[:top_k]
+        evidence_depth = analyze_evidence_depth(requirements, selected_hits, supporting_hits)
+        rubric_result = score_with_rubric(requirements, evidence_depth, selected_hits)
+        candidates.append(
+            {
+                "source_path": source_path,
+                "filename": selected_hits[0].get("filename", source_path) if selected_hits else source_path,
+                "hits": selected_hits,
+                "evidence_depth": evidence_depth,
+                "rubric_result": rubric_result,
+                "best_chunk_score": round(max((hit.get("score", 0.0) for hit in selected_hits), default=0.0), 4),
+                "chunk_count": len(selected_hits),
+            }
+        )
+    candidates.sort(
+        key=lambda item: (
+            item["rubric_result"]["fit_score"],
+            item["best_chunk_score"],
+            item["source_path"],
+        ),
+        reverse=True,
+    )
+    return candidates
+
+
+def build_cv_rankings(candidates: list[dict]) -> list[dict]:
+    rankings = []
+    for index, item in enumerate(candidates, start=1):
+        rubric_result = item["rubric_result"]
+        rankings.append(
+            {
+                "rank": index,
+                "selected": index == 1,
+                "source_path": item["source_path"],
+                "filename": item["filename"],
+                "fit_score": rubric_result["fit_score"],
+                "verdict": score_verdict(rubric_result["fit_score"]),
+                "matched_terms": rubric_result["matched_terms"][:12],
+                "missing_from_cv": rubric_result["missing_from_cv"][:12],
+                "weak_evidence": rubric_result["weak_evidence"][:12],
+                "best_chunk_score": item["best_chunk_score"],
+                "chunks_considered": item["chunk_count"],
+            }
+        )
+    return rankings
 
 
 def score_resume_match(job_terms: set[str], resume_terms: set[str], resume_hits: list[dict]) -> int:

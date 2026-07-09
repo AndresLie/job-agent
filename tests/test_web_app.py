@@ -60,6 +60,7 @@ def test_web_review_with_pasted_jd_returns_result(tmp_path, monkeypatch):
     assert response.status_code == 200
     assert "Fit score" in response.text
     assert "CV vs JD Review" in response.text
+    assert "Scored CV:" in response.text
     assert "CV Improvement Workspace" in response.text
     assert "JD Signals" in response.text
     assert "Evidence used" in response.text
@@ -74,6 +75,32 @@ def test_web_review_with_pasted_jd_returns_result(tmp_path, monkeypatch):
     assert "Review Diagnostics" in response.text
     assert (root / "outputs" / "latest_brief.json").exists()
     assert list((root / "outputs" / "runs").glob("review-*.json"))
+
+
+def test_web_review_renders_cv_candidate_ranking(tmp_path, monkeypatch):
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    root = build_example_root(tmp_path)
+    second_cv = root / "examples" / "resume" / "platform_cv.md"
+    second_cv.write_text("Docker Kubernetes APIs production deployment improved latency by 30%.", encoding="utf-8")
+    client = TestClient(create_app(project_root=root))
+    response = client.post(
+        "/review",
+        data={
+            "rag_folder": str(root / "examples"),
+            "rebuild_index": "true",
+            "company": "Example",
+            "job_text": "# AI Platform Engineer\nPython SQL RAG retrieval evaluation Docker Kubernetes APIs",
+            "job_url": "",
+            "top_k": "8",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "CV Candidate Ranking" in response.text
+    assert "selected" in response.text
+    payload = json.loads((root / "outputs" / "latest_brief.json").read_text(encoding="utf-8"))
+    assert len(payload["cv_rankings"]) == 2
+    assert payload["active_resume"]["selected"] is True
 
 
 def test_web_review_rejects_empty_jd(tmp_path, monkeypatch):

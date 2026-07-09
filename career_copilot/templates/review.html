@@ -288,6 +288,8 @@
               {% endif %}
             </section>
           {% elif result %}
+            {% set active_resume = result.active_resume | default({}) %}
+            {% set cv_rankings = result.cv_rankings | default([]) %}
             <header class="result-header">
               <div>
                 <p class="eyebrow">{{ result.role_family | default("general_ai_data") }}</p>
@@ -302,6 +304,9 @@
             <section class="section-block priority-section">
               <p class="eyebrow">Step 1</p>
               <h3>CV vs JD Review</h3>
+              {% if active_resume.source_path %}
+                <p class="muted">Scored CV: {{ active_resume.source_path }}{% if cv_rankings | length > 1 %} - ranked #1 of {{ cv_rankings | length }} CVs{% endif %}</p>
+              {% endif %}
               <p>{{ result.cv_jd_review.reason }}</p>
               <div class="review-grid">
                 <div>
@@ -330,6 +335,33 @@
                 </div>
               </div>
             </section>
+
+            {% if cv_rankings and cv_rankings | length > 1 %}
+              <section class="section-block">
+                <h3>CV Candidate Ranking</h3>
+                <div class="history-list">
+                  {% for item in cv_rankings %}
+                    <article class="history-item {% if item.selected %}selected-item{% endif %}">
+                      <div>
+                        <h3>#{{ item.rank }} {{ item.source_path }}</h3>
+                        <p>{{ item.verdict | replace("_", " ") }} - {{ item.chunks_considered }} chunks considered</p>
+                        {% if item.matched_terms %}
+                          <div class="evidence-trace">
+                            {% for term in item.matched_terms[:8] %}
+                              <span>{{ term }}</span>
+                            {% endfor %}
+                          </div>
+                        {% endif %}
+                      </div>
+                      <div class="history-score">
+                        <strong>{{ item.fit_score }}</strong>
+                        <span>{{ "selected" if item.selected else "not selected" }}</span>
+                      </div>
+                    </article>
+                  {% endfor %}
+                </div>
+              </section>
+            {% endif %}
 
             <section class="verdict-band verdict-{{ result.application_verdict.label }}">
               <div>

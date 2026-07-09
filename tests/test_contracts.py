@@ -7,6 +7,8 @@ def test_validate_brief_accepts_valid_payload():
         "job_title": "AI Engineer",
         "fit_score": 80,
         "role_family": "ai_engineer",
+        "active_resume": {},
+        "cv_rankings": [],
         "jd_requirements": {"required": ["python"], "preferred": [], "responsibilities": []},
         "evidence_depth": {"by_term": {}},
         "scoring_breakdown": {

@@ -531,10 +531,10 @@ def score_verdict(score: int) -> str:
     if score >= 75:
         return "strong_cv_match"
     if score >= 50:
-        return "moderate_cv_match"
-    if score >= 30:
+        return "partial_cv_match"
+    if score >= 25:
         return "weak_cv_match"
-    return "poor_cv_match"
+    return "not_competitive_from_cv"
 
 
 def confidence_score(resume_hits: list[dict], supporting_hits: list[dict]) -> float:

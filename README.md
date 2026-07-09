@@ -7,6 +7,8 @@ honest CV improvement recommendations.
 It combines three AI engineering patterns:
 
 - RAG over local CV, project, and experience evidence with citations.
+- Per-CV scoring when multiple resumes are indexed, so one selected CV drives
+  the score instead of blending evidence across resume versions.
 - Durable memory for user preferences and career facts.
 - Deterministic JSON contracts and retrieval evaluation.
 
@@ -17,11 +19,12 @@ retrieval are optional when configured.
 ## Portfolio Story
 
 This project is designed to show an end-to-end AI/data product, not just a
-chatbot wrapper. The system first scores the current CV against the JD only,
-then separately searches project and experience evidence to recommend honest
-CV improvements. That separation is intentional: project notes can justify a
-rewrite, but they should not inflate the score of a CV that does not currently
-say the right things.
+chatbot wrapper. The system first scores each indexed CV separately against the
+JD, selects the strongest single CV as the active resume, then separately
+searches project and experience evidence to recommend honest CV improvements.
+That separation is intentional: project notes and alternate CV versions can
+justify a rewrite, but they should not inflate the score of the selected CV if
+it does not currently say the right things.
 
 The strongest demo path is:
 
@@ -32,11 +35,12 @@ The strongest demo path is:
    skills, and responsibilities.
 4. Run the review and explain the score, verdict, weak evidence, and skill
    gaps.
-5. Use the CV Improvement Workspace to copy only grounded bullets, with source
+5. Show the CV Candidate Ranking when more than one resume file is indexed.
+6. Use the CV Improvement Workspace to copy only grounded bullets, with source
    folder, file, chunk, confidence, and evidence excerpt visible.
-6. Open the Evaluation page to show scoring benchmark pass rate, retrieval
+7. Open the Evaluation page to show scoring benchmark pass rate, retrieval
    metrics, JD extraction health, and any failure cases.
-7. Export or rerun after editing the CV to prove the score changes only when
+8. Export or rerun after editing the CV to prove the score changes only when
    the resume evidence changes.
 
 ## Architecture
@@ -275,6 +279,8 @@ resume/project/experience documents. Safe public examples live under
 - Adversarial benchmark cases for shallow keyword resumes, hidden project
   evidence, weak senior-role evidence, wrong-domain matching, and alias gaps.
 - Separate JD-to-CV scoring from project/experience-based CV recommendations.
+- Multi-CV ranking that compares resume files independently and prevents score
+  inflation from mixing multiple CV versions.
 - Role-aware job-fit scoring for data scientist, AI engineer, and ML engineer
   roles.
 - Application verdicts with apply/no-apply guidance.
@@ -332,6 +338,8 @@ object with:
 - `schema_version`
 - `fit_score`
 - `role_family`
+- `active_resume`
+- `cv_rankings`
 - `jd_requirements`
 - `evidence_depth`
 - `scoring_breakdown`

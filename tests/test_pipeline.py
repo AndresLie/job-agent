@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from career_copilot.answer import answer_query
-from career_copilot.brief import generate_brief, verify_rewrite_claim
+from career_copilot.brief import generate_brief, skill_terms, verify_rewrite_claim
 from career_copilot.documents import chunk_document
 from career_copilot.embeddings import HashingEmbedder
 from career_copilot.hermes import detect_agent_contradictions, generate_brutal_llm_review, parse_agent_output
@@ -131,6 +131,47 @@ def test_brief_scores_resume_only_and_uses_projects_for_cv_recommendations(tmp_p
     assert brief["application_verdict"]["label"] in {"weak_match", "stretch"}
     assert brief["cv_rewrite_suggestions"]
     assert all("jobs/" not in item["source_path"] for item in brief["cv_rewrite_suggestions"])
+
+
+def test_brief_scores_each_resume_file_separately(tmp_path, monkeypatch):
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    embedder = HashingEmbedder()
+    store = JsonVectorStore(tmp_path / "vectors.json")
+    memory = MemoryStore(tmp_path / "memory.json")
+    resume_texts = {
+        "resume/python_cv.md": "Python RAG retrieval evaluation and LLM agent coursework.",
+        "resume/platform_cv.md": "Docker Kubernetes APIs production deployment improved latency by 30%.",
+    }
+    for relpath, text in resume_texts.items():
+        path = tmp_path / relpath
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        store.upsert_chunks(chunk_document(path, text, root=tmp_path), embedder)
+
+    brief = generate_brief(
+        None,
+        store,
+        embedder,
+        memory,
+        job_text="# AI Platform Engineer\nPython RAG retrieval evaluation Docker Kubernetes APIs",
+        job_title="AI Platform Engineer",
+    )
+
+    selected = next(item for item in brief["cv_rankings"] if item["selected"])
+    unselected = next(item for item in brief["cv_rankings"] if not item["selected"])
+    active_terms = skill_terms(resume_texts[selected["source_path"]])
+    inactive_terms = skill_terms(resume_texts[unselected["source_path"]])
+
+    assert len(brief["cv_rankings"]) == 2
+    assert brief["active_resume"]["source_path"] == selected["source_path"]
+    assert brief["fit_score"] == selected["fit_score"]
+    assert all(
+        item["source_path"] == selected["source_path"]
+        for item in brief["matched_evidence"]
+        if item.get("source") != "memory"
+    )
+    assert set(brief["cv_match"]["matched_terms"]) <= active_terms
+    assert not (set(brief["cv_match"]["matched_terms"]) >= (active_terms | inactive_terms))
 
 
 def test_web_research_does_not_change_cv_jd_score(tmp_path, monkeypatch):

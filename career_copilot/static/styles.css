@@ -571,6 +571,11 @@ button.is-loading .button-spinner {
   gap: 4px;
 }
 
+.selected-item {
+  border-left: 4px solid var(--good);
+  background: #f7fcf9;
+}
+
 .history-score strong {
   font-size: 24px;
 }
