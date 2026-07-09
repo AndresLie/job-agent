@@ -16,11 +16,10 @@ from .brief import generate_brief
 from .config import load_env_file
 from .documents import chunk_document, discover_documents, load_document
 from .embeddings import build_embedder
-from .evaluate import evaluate_retrieval
+from .evaluation_report import build_full_evaluation_report
 from .job_input import resolve_job_input
 from .memory import MemoryStore
 from .rubric import analyze_job_requirements
-from .score_eval import evaluate_scoring_cases
 from .vector_store import JsonVectorStore
 from .web_research import research_company
 from .wizard import write_json
@@ -463,27 +462,7 @@ def read_review_payload(path: Path) -> dict[str, Any] | None:
 
 
 def build_evaluation_report(root: Path) -> dict[str, Any]:
-    scoring_path = root / "benchmarks" / "scoring_cases.jsonl"
-    queries_path = root / "benchmarks" / "queries.jsonl"
-    index_path = root / "storage" / "vector_store.json"
-    report: dict[str, Any] = {
-        "scoring": {"status": "missing", "cases": 0, "passed": 0, "pass_rate": 0.0, "failures": []},
-        "retrieval": {"status": "not_indexed", "queries": 0, "recall_at_k": 0.0, "mrr": 0.0, "ndcg_at_k": 0.0},
-        "jd_extraction": jd_extraction_health(root),
-    }
-    if scoring_path.exists():
-        try:
-            report["scoring"] = {"status": "ok", **evaluate_scoring_cases(scoring_path)}
-        except Exception as exc:
-            report["scoring"] = {"status": "error", "error": str(exc), "cases": 0, "passed": 0, "pass_rate": 0.0, "failures": []}
-    if queries_path.exists() and index_path.exists():
-        store = JsonVectorStore(index_path)
-        if store.records:
-            try:
-                report["retrieval"] = {"status": "ok", **evaluate_retrieval(queries_path, store, build_embedder("hashing"), k=5)}
-            except Exception as exc:
-                report["retrieval"] = {"status": "error", "error": str(exc), "queries": 0, "recall_at_k": 0.0, "mrr": 0.0, "ndcg_at_k": 0.0}
-    return report
+    return build_full_evaluation_report(root=root)
 
 
 def jd_extraction_health(root: Path) -> dict[str, Any]:

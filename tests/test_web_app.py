@@ -68,6 +68,9 @@ def test_web_review_with_pasted_jd_returns_result(tmp_path, monkeypatch):
     assert "Resume bullet to consider" in response.text
     assert "Why this is safe or risky" in response.text
     assert "Source evidence" in response.text
+    assert "Current CV fit" in response.text
+    assert "Apply recommendation" in response.text
+    assert "Agent failures" in response.text
     assert "Review Diagnostics" in response.text
     assert (root / "outputs" / "latest_brief.json").exists()
     assert list((root / "outputs" / "runs").glob("review-*.json"))
@@ -220,6 +223,34 @@ def test_web_review_uses_requirement_override(tmp_path, monkeypatch):
     assert payload["diagnostics"]["requirement_override_used"] is True
 
 
+def test_web_review_renders_named_agent_trace(tmp_path, monkeypatch):
+    monkeypatch.setenv("NVIDIA_API_KEY", "test-key")
+    monkeypatch.setattr("career_copilot.hermes.nvidia_chat", lambda **kwargs: "agent conclusion")
+    root = build_example_root(tmp_path)
+    client = TestClient(create_app(project_root=root))
+    response = client.post(
+        "/review",
+        data={
+            "rag_folder": str(root / "examples"),
+            "rebuild_index": "true",
+            "company": "Example",
+            "job_text": "# AI Engineer\nPython SQL RAG retrieval evaluation",
+            "job_url": "",
+            "top_k": "8",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "JD Analyst Agent" in response.text
+    assert "CV Match Agent" in response.text
+    assert "Evidence Miner Agent" in response.text
+    assert "Contradiction Judge Agent" in response.text
+    assert "Final Synthesizer Agent" in response.text
+    payload = json.loads((root / "outputs" / "latest_brief.json").read_text(encoding="utf-8"))
+    assert payload["agent_consensus"]["source"] == "hermes_multi_agent"
+    assert payload["diagnostics"]["llm_agent_steps"] == 7
+
+
 def test_web_history_lists_and_loads_review_runs(tmp_path, monkeypatch):
     monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
     root = build_example_root(tmp_path)
@@ -281,6 +312,8 @@ def test_web_eval_dashboard_reports_scoring_and_extraction(tmp_path, monkeypatch
     assert "Scoring Benchmarks" in response.text
     assert "Retrieval Recall@5" in response.text
     assert "JD Extraction" in response.text
+    assert "Agent Reliability" in response.text
+    assert "Agent Quality" in response.text
 
 
 def test_web_history_rejects_invalid_run_id(tmp_path, monkeypatch):

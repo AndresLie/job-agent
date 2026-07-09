@@ -7,6 +7,7 @@ from typing import Any
 
 
 REQUIRED_BRIEF_FIELDS = {
+    "schema_version",
     "job_title",
     "fit_score",
     "role_family",
@@ -35,6 +36,8 @@ def validate_brief(payload: dict[str, Any]) -> tuple[bool, str]:
     missing = sorted(REQUIRED_BRIEF_FIELDS - payload.keys())
     if missing:
         return False, f"missing fields: {', '.join(missing)}"
+    if not isinstance(payload["schema_version"], str):
+        return False, "schema_version must be a string"
     if not isinstance(payload["matched_evidence"], list):
         return False, "matched_evidence must be a list"
     if not isinstance(payload["role_family"], str):

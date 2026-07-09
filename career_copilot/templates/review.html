@@ -161,6 +161,11 @@
                   <strong>{{ (eval_report.jd_extraction.success_rate * 100) | round(1) }}%</strong>
                   <p>{{ eval_report.jd_extraction.successful }}/{{ eval_report.jd_extraction.runs }} saved runs</p>
                 </article>
+                <article class="eval-card">
+                  <span>Agent Reliability</span>
+                  <strong>{{ eval_report.agents.successful_agents }}/{{ eval_report.agents.agent_count }}</strong>
+                  <p>{{ (eval_report.agents.structured_output_rate * 100) | round(1) }}% structured / {{ eval_report.agents.contradictions }} contradictions</p>
+                </article>
               </div>
             </section>
 
@@ -198,6 +203,42 @@
                   </div>
                 {% else %}
                   <p class="muted">No saved review runs yet.</p>
+                {% endif %}
+              </div>
+            </section>
+
+            <section class="section-grid">
+              <div class="section-block">
+                <h3>Agent Quality</h3>
+                <div class="diagnostics-grid">
+                  <span>Status</span>
+                  <strong>{{ eval_report.agents.status | replace("_", " ") }}</strong>
+                  <span>Failed agents</span>
+                  <strong>{{ eval_report.agents.failed_agents }}</strong>
+                  <span>Structured output rate</span>
+                  <strong>{{ (eval_report.agents.structured_output_rate * 100) | round(1) }}%</strong>
+                  <span>Schema errors</span>
+                  <strong>{{ eval_report.agents.schema_error_count | default(0) }}</strong>
+                  <span>Total latency</span>
+                  <strong>{{ eval_report.agents.total_latency_ms | default(0) }} ms</strong>
+                  <span>Latest verdict</span>
+                  <strong>{{ eval_report.agents.verdict | default("unknown") }}</strong>
+                  <span>Schema version</span>
+                  <strong>{{ eval_report.agents.schema_version | default("unknown") }}</strong>
+                </div>
+              </div>
+
+              <div class="section-block">
+                <h3>Agent Contradictions</h3>
+                {% if eval_report.agents.contradiction_findings %}
+                  <div class="diagnostics-grid">
+                    {% for item in eval_report.agents.contradiction_findings %}
+                      <span>{{ item.severity }} / {{ item.type }}</span>
+                      <strong>{{ item.reason }}</strong>
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  <p class="muted">No contradiction findings in the latest brief.</p>
                 {% endif %}
               </div>
             </section>
@@ -575,7 +616,72 @@
             <section class="section-block">
               <h3>Brutal Assessment</h3>
               <p>{{ result.brutal_assessment }}</p>
-              {% if result.llm_agent_steps %}
+              {% if result.agent_consensus %}
+                <div class="agent-consensus">
+                  <div>
+                    <span>Current CV fit</span>
+                    <strong>{{ result.agent_consensus.current_cv_fit }}</strong>
+                  </div>
+                  <div>
+                    <span>Hidden evidence</span>
+                    <strong>{{ result.agent_consensus.hidden_evidence_quality }}</strong>
+                  </div>
+                  <div>
+                    <span>Apply recommendation</span>
+                    <strong>{{ result.agent_consensus.apply_recommendation | replace("_", " ") }}</strong>
+                  </div>
+                  <div>
+                    <span>Confidence</span>
+                    <strong>{{ result.agent_consensus.confidence }}</strong>
+                  </div>
+                  <div>
+                    <span>Contradictions</span>
+                    <strong>{{ result.agent_consensus.contradiction_count | default(0) }}</strong>
+                  </div>
+                </div>
+                {% if result.agent_consensus.biggest_gaps %}
+                  <div class="agent-gap-list">
+                    <strong>Biggest gaps</strong>
+                    <ul class="tag-list">
+                      {% for item in result.agent_consensus.biggest_gaps %}
+                        <li>{{ item }}</li>
+                      {% endfor %}
+                    </ul>
+                  </div>
+                {% endif %}
+                {% if result.agent_contradictions %}
+                  <div class="agent-gap-list">
+                    <strong>Agent contradiction findings</strong>
+                    <div class="diagnostics-grid">
+                      {% for item in result.agent_contradictions %}
+                        <span>{{ item.severity }} / {{ item.type }}</span>
+                        <strong>{{ item.reason }}</strong>
+                      {% endfor %}
+                    </div>
+                  </div>
+                {% endif %}
+              {% endif %}
+              {% if result.agent_trace %}
+                <div class="agent-step-list">
+                  {% for step in result.agent_trace %}
+                    <article class="agent-step agent-step-{{ step.status }}">
+                      <div class="agent-step-header">
+                        <div>
+                          <span>{{ step.status }}</span>
+                          <h4>{{ step.title }}</h4>
+                        </div>
+                        <small>{{ step.agent_id }}{% if step.structured %} / structured{% endif %}</small>
+                      </div>
+                      <p>{{ step.role }}</p>
+                      {% if step.output %}
+                        <pre>{{ step.output }}</pre>
+                      {% else %}
+                        <p class="muted">{{ step.failure_reason }}</p>
+                      {% endif %}
+                    </article>
+                  {% endfor %}
+                </div>
+              {% elif result.llm_agent_steps %}
                 <div class="agent-step-list">
                   {% for step in result.llm_agent_steps %}
                     <article class="agent-step">
@@ -607,6 +713,14 @@
                 <strong>{{ result.diagnostics.memory_hits | default(0) }}</strong>
                 <span>Requirement override</span>
                 <strong>{{ "used" if result.diagnostics.requirement_override_used else "auto" }}</strong>
+                <span>Agent failures</span>
+                <strong>{{ result.diagnostics.llm_agent_failures | default(0) }}</strong>
+                <span>Agent contradictions</span>
+                <strong>{{ result.diagnostics.llm_agent_contradictions | default(0) }}</strong>
+                <span>Agent schema errors</span>
+                <strong>{{ result.diagnostics.llm_agent_schema_errors | default(0) }}</strong>
+                <span>Agent latency</span>
+                <strong>{{ result.diagnostics.llm_agent_total_latency_ms | default(0) }} ms</strong>
               </div>
               {% if result.diagnostics.memory_recall %}
                 <h4>Recalled Memory</h4>

@@ -1,9 +1,10 @@
 from pathlib import Path
 
 from career_copilot.answer import answer_query
-from career_copilot.brief import generate_brief, generate_brutal_llm_review, verify_rewrite_claim
+from career_copilot.brief import generate_brief, verify_rewrite_claim
 from career_copilot.documents import chunk_document
 from career_copilot.embeddings import HashingEmbedder
+from career_copilot.hermes import detect_agent_contradictions, generate_brutal_llm_review, parse_agent_output
 from career_copilot.memory import MemoryStore
 from career_copilot.vector_store import JsonVectorStore
 
@@ -38,9 +39,12 @@ def test_generate_brief_has_required_fields(tmp_path):
     job.write_text("# AI Engineer\nPython retrieval evaluation BM25", encoding="utf-8")
     brief = generate_brief(job, store, embedder, memory)
     assert brief["job_title"] == "AI Engineer"
+    assert brief["schema_version"] == "1.1"
     assert brief["matched_evidence"]
     assert brief["score_explanations"]
     assert "llm_agent_steps" in brief
+    assert "agent_trace" in brief
+    assert brief["agent_consensus"]["source"] == "deterministic_fallback"
     assert brief["diagnostics"]["llm_status"] in {"not_configured", "configured_but_unavailable", "used"}
 
 
@@ -262,13 +266,14 @@ def test_claim_verifier_flags_unsupported_impact_language():
 
 
 def test_hermes_review_runs_multi_step_agent(monkeypatch):
+    monkeypatch.setenv("NVIDIA_API_KEY", "test-key")
     calls = []
 
     def fake_nvidia_chat(system_prompt, user_prompt):
         calls.append({"system_prompt": system_prompt, "user_prompt": user_prompt})
         return f"step {len(calls)} conclusion"
 
-    monkeypatch.setattr("career_copilot.brief.nvidia_chat", fake_nvidia_chat)
+    monkeypatch.setattr("career_copilot.hermes.nvidia_chat", fake_nvidia_chat)
     review = generate_brutal_llm_review(
         job_title="AI Engineer",
         job_text="Python retrieval evaluation Docker",
@@ -307,7 +312,135 @@ def test_hermes_review_runs_multi_step_agent(monkeypatch):
     )
 
     assert review is not None
-    assert [step["id"] for step in review["steps"]] == ["fit_diagnosis", "evidence_audit", "rewrite_plan"]
+    assert [step["id"] for step in review["steps"]] == [
+        "jd_analyst",
+        "cv_match",
+        "evidence_miner",
+        "claim_verifier",
+        "critic",
+        "contradiction_judge",
+        "final_synthesizer",
+    ]
+    assert [item["agent_id"] for item in review["agent_trace"]] == [
+        "jd_analyst",
+        "cv_match",
+        "evidence_miner",
+        "claim_verifier",
+        "critic",
+        "contradiction_judge",
+        "final_synthesizer",
+    ]
     assert "Hermes multi-step review" in review["final_review"]
-    assert "Prior step conclusions:\nNone yet." in calls[0]["user_prompt"]
+    assert "Prior agent conclusions:\nNone yet." in calls[0]["user_prompt"]
     assert "step 1 conclusion" in calls[1]["user_prompt"]
+    assert "Project/experience evidence:" not in calls[1]["user_prompt"]
+    assert "Built a RAG system" not in calls[1]["user_prompt"]
+    assert review["agent_consensus"]["source"] == "hermes_multi_agent"
+    assert review["agent_consensus"]["successful_agents"] == 7
+    assert review["agent_trace"][0]["structured_output"]["conclusion"] == "step 1 conclusion"
+    assert review["agent_trace"][0]["structured"] is False
+    assert review["agent_trace"][0]["schema_errors"] == ["invalid_json"]
+    assert review["agent_trace"][0]["usage"]["latency_ms"] >= 0
+    assert review["agent_consensus"]["total_prompt_chars"] > 0
+
+
+def test_hermes_review_captures_failed_agent(monkeypatch):
+    monkeypatch.setenv("NVIDIA_API_KEY", "test-key")
+    calls = []
+
+    def fake_nvidia_chat(system_prompt, user_prompt):
+        calls.append(user_prompt)
+        if len(calls) == 3:
+            return None
+        return f"agent {len(calls)} ok"
+
+    monkeypatch.setattr("career_copilot.hermes.nvidia_chat", fake_nvidia_chat)
+    review = generate_brutal_llm_review(
+        job_title="AI Engineer",
+        job_text="Python retrieval evaluation Docker",
+        fit_score=56,
+        application_verdict={"label": "stretch", "reason": "Some CV evidence is missing."},
+        cv_rewrite_suggestions=[],
+        requirements={"role_family": "ai_engineer", "required": ["python", "docker"], "preferred": []},
+        evidence_depth={},
+        scoring_breakdown={"base": 56},
+        weak_evidence=["docker"],
+        matched=["python"],
+        hidden_terms=["docker"],
+        gaps=["kubernetes"],
+        resume_hits=[],
+        supporting_hits=[],
+    )
+
+    assert review is not None
+    assert len(review["agent_trace"]) == 7
+    assert review["agent_trace"][2]["status"] == "failed"
+    assert review["agent_trace"][2]["failure_reason"]
+    assert len(review["steps"]) == 6
+    assert "failed" in calls[3]
+
+
+def test_hermes_review_parses_structured_agent_output_and_detects_contradiction(monkeypatch):
+    monkeypatch.setenv("NVIDIA_API_KEY", "test-key")
+
+    def fake_nvidia_chat(system_prompt, user_prompt):
+        return (
+            '{"conclusion":"Strong match apply now","findings":["Strong match"],'
+            '"risks":["none"],"recommendations":["apply immediately"],"confidence":0.9}'
+        )
+
+    monkeypatch.setattr("career_copilot.hermes.nvidia_chat", fake_nvidia_chat)
+    review = generate_brutal_llm_review(
+        job_title="AI Engineer",
+        job_text="Python retrieval evaluation Docker",
+        fit_score=25,
+        application_verdict={"label": "weak_match", "apply_now": False, "reason": "Too weak."},
+        cv_rewrite_suggestions=[],
+        requirements={"role_family": "ai_engineer", "required": ["python", "docker"], "preferred": []},
+        evidence_depth={},
+        scoring_breakdown={"base": 25},
+        weak_evidence=["docker"],
+        matched=["python"],
+        hidden_terms=[],
+        gaps=["kubernetes"],
+        resume_hits=[],
+        supporting_hits=[],
+    )
+
+    assert review is not None
+    assert review["agent_trace"][0]["structured"] is True
+    assert review["agent_trace"][0]["structured_output"]["confidence"] == 0.9
+    assert review["agent_contradictions"]
+    assert review["agent_consensus"]["contradiction_count"] >= 1
+
+
+def test_hermes_structured_output_requires_raw_schema_types():
+    payload, structured, errors = parse_agent_output(
+        '{"conclusion":"Useful audit","findings":"not a list","risks":[],"recommendations":[],"confidence":0.8}'
+    )
+
+    assert payload["findings"] == ["not a list"]
+    assert structured is False
+    assert "invalid_findings" in errors
+
+
+def test_contradiction_detector_ignores_negated_recommendations():
+    contradictions = detect_agent_contradictions(
+        trace=[
+            {
+                "agent_id": "claim_verifier",
+                "status": "success",
+                "output": "Docker claim needs verification.",
+            },
+            {
+                "agent_id": "final_synthesizer",
+                "status": "success",
+                "output": "This is not a strong match. Do not apply immediately. Docker is not safe to claim yet.",
+            },
+        ],
+        fit_score=25,
+        application_verdict={"apply_now": False},
+        gaps=["docker"],
+    )
+
+    assert contradictions == []

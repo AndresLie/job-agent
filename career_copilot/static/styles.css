@@ -736,6 +736,40 @@ button.is-loading .button-spinner {
   margin-top: 12px;
 }
 
+.agent-consensus {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.agent-consensus div {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: #fbfcfd;
+}
+
+.agent-consensus span,
+.agent-step-header span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.agent-consensus strong {
+  overflow-wrap: anywhere;
+}
+
+.agent-gap-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 .agent-step {
   border: 1px solid var(--line);
   border-left: 4px solid var(--accent);
@@ -744,15 +778,30 @@ button.is-loading .button-spinner {
   background: #fbfcfd;
 }
 
-.agent-step span {
+.agent-step-failed {
+  border-left-color: var(--warn);
+}
+
+.agent-step-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.agent-step-header small {
   color: var(--muted);
   font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
+  overflow-wrap: anywhere;
 }
 
 .agent-step h4 {
   margin: 4px 0 8px;
+}
+
+.agent-step p {
+  margin: 0 0 10px;
+  color: var(--muted);
 }
 
 .agent-step pre {
@@ -805,7 +854,9 @@ button.is-loading .button-spinner {
   }
 
   .suggestion-header,
-  .suggestion-summary {
+  .suggestion-summary,
+  .agent-consensus,
+  .agent-step-header {
     grid-template-columns: 1fr;
   }
 

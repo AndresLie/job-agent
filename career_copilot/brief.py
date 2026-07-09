@@ -3,10 +3,11 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from .answer import build_citations, has_llm_config, nvidia_chat
+from .answer import build_citations, has_llm_config
 from .contracts import validate_brief, write_json_contract
 from .documents import clean_text
 from .embeddings import Embedder
+from .hermes import build_default_agent_consensus, generate_brutal_llm_review
 from .memory import MemoryStore
 from .rubric import analyze_evidence_depth, analyze_job_requirements, extract_skills, known_skill_terms, score_with_rubric
 from .vector_store import JsonVectorStore, keyword_tokens
@@ -88,11 +89,27 @@ def generate_brief(
         supporting_hits=supporting_hits,
     )
     llm_review = hermes_review["final_review"] if hermes_review else None
+    agent_trace = hermes_review["agent_trace"] if hermes_review else []
+    agent_contradictions = hermes_review["agent_contradictions"] if hermes_review else []
+    agent_usage = summarize_agent_usage(agent_trace)
+    agent_consensus = hermes_review["agent_consensus"] if hermes_review else build_default_agent_consensus(
+        application_verdict=application_verdict,
+        fit_score=fit_score,
+        hidden_terms=hidden_terms,
+        gaps=gaps,
+        confidence=confidence_score(resume_hits, supporting_hits),
+    )
     diagnostics_payload = dict(diagnostics or {})
     diagnostics_payload.update(
         {
             "llm_status": "used" if llm_review else ("configured_but_unavailable" if has_llm_config() else "not_configured"),
-            "llm_agent_steps": len(hermes_review["steps"]) if hermes_review else 0,
+            "llm_agent_steps": len(agent_trace),
+            "llm_agent_failures": len([item for item in agent_trace if item.get("status") != "success"]),
+            "llm_agent_contradictions": len(agent_contradictions),
+            "llm_agent_schema_errors": agent_usage["schema_errors"],
+            "llm_agent_total_latency_ms": agent_usage["total_latency_ms"],
+            "llm_agent_prompt_chars": agent_usage["prompt_chars"],
+            "llm_agent_output_chars": agent_usage["output_chars"],
             "memory_hits": len(memories),
             "memory_summaries": memories[:5],
             "resume_chunks_considered": len(resume_hits),
@@ -102,6 +119,7 @@ def generate_brief(
     )
     all_citation_hits = resume_hits + supporting_hits
     payload = {
+        "schema_version": "1.1",
         "job_title": job_title or infer_title(job_text, job_path),
         "job_input": {
             "source_type": job_source_type,
@@ -141,6 +159,9 @@ def generate_brief(
         "brutal_assessment": brutal_assessment,
         "llm_brutal_review": llm_review,
         "llm_agent_steps": hermes_review["steps"] if hermes_review else [],
+        "agent_trace": agent_trace,
+        "agent_consensus": agent_consensus,
+        "agent_contradictions": agent_contradictions,
         "citations": build_citations(all_citation_hits),
         "web_research": web_research or [],
         "confidence": confidence_score(resume_hits, supporting_hits),
@@ -152,6 +173,15 @@ def generate_brief(
     if write_contract:
         write_json_contract(payload)
     return payload
+
+
+def summarize_agent_usage(agent_trace: list[dict]) -> dict:
+    return {
+        "schema_errors": sum(len(item.get("schema_errors") or []) for item in agent_trace),
+        "total_latency_ms": round(sum(float(item.get("usage", {}).get("latency_ms", 0.0)) for item in agent_trace), 2),
+        "prompt_chars": sum(int(item.get("usage", {}).get("prompt_chars", 0)) for item in agent_trace),
+        "output_chars": sum(int(item.get("usage", {}).get("output_chars", 0)) for item in agent_trace),
+    }
 
 
 def apply_requirements_override(requirements: dict, override: dict | None) -> dict:
@@ -641,115 +671,3 @@ def confidence_score(resume_hits: list[dict], supporting_hits: list[dict]) -> fl
     if supporting_hits:
         return 0.48
     return 0.25
-
-
-def generate_brutal_llm_review(
-    *,
-    job_title: str,
-    job_text: str,
-    fit_score: int,
-    application_verdict: dict,
-    cv_rewrite_suggestions: list[dict],
-    requirements: dict,
-    evidence_depth: dict,
-    scoring_breakdown: dict,
-    weak_evidence: list[str],
-    matched: list[str],
-    hidden_terms: list[str],
-    gaps: list[str],
-    resume_hits: list[dict],
-    supporting_hits: list[dict],
-) -> dict | None:
-    resume_context = format_hits_for_prompt(resume_hits[:4])
-    supporting_context = format_hits_for_prompt(supporting_hits[:5])
-    rewrite_context = "\n".join(
-        f"- {item['bullet']} (source: {item['source_path']} chunk {item['chunk_index']})"
-        for item in cv_rewrite_suggestions
-    )
-    base_context = (
-        f"Job title: {job_title}\n"
-        f"JD excerpt:\n{job_text[:3500]}\n\n"
-        f"Deterministic JD-to-CV score: {fit_score}/100\n"
-        f"Deterministic application verdict: {application_verdict}\n"
-        f"Role family: {requirements.get('role_family')}\n"
-        f"JD requirements: {requirements}\n"
-        f"Scoring breakdown: {scoring_breakdown}\n"
-        f"Weak evidence: {', '.join(weak_evidence) or 'none'}\n"
-        f"Evidence depth: {evidence_depth}\n"
-        f"CV matched terms: {', '.join(matched) or 'none'}\n"
-        f"Terms found in projects/experience but missing from CV: {', '.join(hidden_terms) or 'none'}\n"
-        f"Terms with no evidence: {', '.join(gaps) or 'none'}\n\n"
-        f"CV evidence:\n{resume_context or 'No CV evidence.'}\n\n"
-        f"Project/experience evidence:\n{supporting_context or 'No project/experience evidence.'}\n\n"
-        f"Grounded draft CV bullets:\n{rewrite_context or 'No grounded rewrite suggestions.'}\n"
-    )
-    system_prompt = (
-        "You are Hermes, a multi-step career reasoning agent for data scientist and AI roles. "
-        "Use only the supplied JD, CV evidence, and project/experience evidence. "
-        "Do not reveal hidden chain-of-thought; return concise audit conclusions only. "
-        "Do not flatter the candidate. If the evidence is insufficient, say so clearly. "
-        "Keep the deterministic score as the source of truth. Do not invent metrics, employers, outcomes, or tools."
-    )
-    step_specs = [
-        {
-            "id": "fit_diagnosis",
-            "title": "Current CV Fit Diagnosis",
-            "instruction": (
-                "Step 1: Compare the current CV evidence against the JD only. "
-                "Explain whether the deterministic score is justified, identify the strongest CV evidence, "
-                "and name the highest-impact CV gaps. Do not use project/experience evidence as current CV evidence."
-            ),
-        },
-        {
-            "id": "evidence_audit",
-            "title": "Project and Experience Evidence Audit",
-            "instruction": (
-                "Step 2: Audit the project/experience evidence for the missing JD requirements. "
-                "Classify what can be safely moved into the CV, what needs verification, and what has no evidence. "
-                "Be blunt when projects are too weak for the target role."
-            ),
-        },
-        {
-            "id": "rewrite_plan",
-            "title": "Brutal CV Rewrite Plan",
-            "instruction": (
-                "Step 3: Produce a final recommendation with: apply/no-apply guidance, "
-                "the top CV rewrite moves, grounded bullet suggestions, and warnings about claims the candidate should not make."
-            ),
-        },
-    ]
-    steps = []
-    for step in step_specs:
-        prior = format_prior_agent_steps(steps)
-        output = nvidia_chat(
-            system_prompt=system_prompt,
-            user_prompt=(
-                f"{base_context}\n\n"
-                f"Prior step conclusions:\n{prior or 'None yet.'}\n\n"
-                f"{step['instruction']}\n"
-                "Return 4-8 concise bullets. Start with the direct conclusion."
-            ),
-        )
-        if not output:
-            return None
-        steps.append({"id": step["id"], "title": step["title"], "output": output})
-    return {"steps": steps, "final_review": format_hermes_review(steps)}
-
-
-def format_prior_agent_steps(steps: list[dict]) -> str:
-    return "\n\n".join(f"{step['title']}:\n{step['output']}" for step in steps)
-
-
-def format_hermes_review(steps: list[dict]) -> str:
-    lines = ["Hermes multi-step review"]
-    for index, step in enumerate(steps, start=1):
-        lines.extend(["", f"{index}. {step['title']}", step["output"]])
-    return "\n".join(lines)
-
-
-def format_hits_for_prompt(hits: list[dict]) -> str:
-    lines = []
-    for index, hit in enumerate(hits, start=1):
-        text = re.sub(r"\s+", " ", hit["text"]).strip()[:700]
-        lines.append(f"[{index}] {hit.get('category', 'general')}/{hit['filename']} chunk {hit['chunk_index']}: {text}")
-    return "\n".join(lines)

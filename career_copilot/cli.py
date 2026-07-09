@@ -11,6 +11,7 @@ from .config import load_env_file
 from .cv_export import export_cv_rewrite
 from .documents import chunk_document, discover_documents, load_document
 from .embeddings import build_embedder
+from .evaluation_report import build_full_evaluation_report
 from .evaluate import evaluate_retrieval
 from .job_input import resolve_job_input
 from .memory import MemoryStore
@@ -88,6 +89,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     score_eval = sub.add_parser("evaluate-score", help="Evaluate job-fit scoring against labeled cases")
     score_eval.add_argument("--cases", type=Path, default=PROJECT_ROOT / "benchmarks" / "scoring_cases.jsonl")
+
+    evaluate_all = sub.add_parser("evaluate-all", help="Run scoring, retrieval, agent, and extraction evaluations")
+    evaluate_all.add_argument("--cases", type=Path, default=PROJECT_ROOT / "benchmarks" / "scoring_cases.jsonl")
+    evaluate_all.add_argument("--queries", type=Path, default=PROJECT_ROOT / "benchmarks" / "queries.jsonl")
+    evaluate_all.add_argument("--brief", type=Path, default=PROJECT_ROOT / "outputs" / "latest_brief.json")
+    evaluate_all.add_argument("--k", type=int, default=5)
 
     rewrite = sub.add_parser("export-cv-rewrite", help="Export grounded CV rewrite suggestions as Markdown")
     rewrite.add_argument("--brief", type=Path, default=PROJECT_ROOT / "outputs" / "latest_brief.json")
@@ -230,6 +237,18 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "evaluate-score":
         payload = evaluate_scoring_cases(args.cases)
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.cmd == "evaluate-all":
+        payload = build_full_evaluation_report(
+            root=PROJECT_ROOT,
+            scoring_cases=args.cases,
+            retrieval_queries=args.queries,
+            index_path=DEFAULT_INDEX,
+            brief_path=args.brief,
+            k=args.k,
+        )
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
 

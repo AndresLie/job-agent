@@ -266,8 +266,8 @@ resume/project/experience documents. Safe public examples live under
 - Web review history for opening previous saved runs.
 - JD URL preview with editable extracted text and requirement diagnostics.
 - CV Improvement Workspace with keep/rewrite/add/missing-evidence lanes.
-- Evaluation dashboard for scoring, retrieval, JD extraction, and failure-case
-  visibility.
+- Evaluation dashboard for scoring, retrieval, JD extraction, agent reliability,
+  and failure-case visibility.
 - Grounded claim verifier for generated CV bullets, including safe-to-claim
   status and required evidence warnings.
 - Explainable score breakdown with points, credited evidence, missing evidence,
@@ -279,13 +279,17 @@ resume/project/experience documents. Safe public examples live under
   roles.
 - Application verdicts with apply/no-apply guidance.
 - Grounded CV rewrite bullets that cite project or experience chunks.
-- Brutally honest LLM review when NVIDIA chat is configured, with deterministic
-  fallback when it is not.
+- Multi-agent Hermes review when NVIDIA chat is configured, with schema-checked
+  structured agent traces, contradiction detection, latency diagnostics, and
+  deterministic fallback.
 - Structured job-fit output with a validated JSON result contract.
 - Review diagnostics for extraction method, LLM/web status, indexed chunks, and
   memory influence.
 - Objective retrieval metrics: Recall@k, MRR, and nDCG@k.
 - Scoring-quality evaluation cases for checking score bands and verdicts.
+- Portfolio-grade `evaluate-all` report combining scoring, retrieval, agent
+  quality, structured-output rate, schema errors, latency, and contradiction
+  findings.
 - Markdown CV rewrite exports and portfolio coverage reports.
 
 ## CLI
@@ -306,9 +310,13 @@ python -m career_copilot wizard
 python -m career_copilot demo
 python -m career_copilot evaluate --k 5
 python -m career_copilot evaluate-score --cases benchmarks/scoring_cases.jsonl
+python -m career_copilot evaluate-all
 ```
 
 `evaluate-score` uses labeled cases with expected score bands and verdicts.
+`evaluate-all` combines scoring benchmarks, retrieval metrics, latest agent
+trace quality, contradiction findings, and JD extraction health into one JSON
+report.
 `export-cv-rewrite` turns grounded rewrite suggestions into a Markdown plan
 with source chunks, target terms, confidence, and a safe-to-claim flag.
 `portfolio-report` summarizes project/experience coverage for data scientist,
@@ -321,6 +329,7 @@ When `AI_JOB_COPILOT_RESULT_PATH` is set, `brief --write-contract` writes a JSON
 object with:
 
 - `job_title`
+- `schema_version`
 - `fit_score`
 - `role_family`
 - `jd_requirements`
@@ -338,6 +347,10 @@ object with:
 - `recommended_actions`
 - `brutal_assessment`
 - `llm_brutal_review`
+- `llm_agent_steps`
+- `agent_trace`
+- `agent_consensus`
+- `agent_contradictions`
 - `citations`
 - `confidence`
 - `diagnostics`

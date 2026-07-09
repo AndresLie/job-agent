@@ -3,6 +3,7 @@ from career_copilot.contracts import validate_brief
 
 def test_validate_brief_accepts_valid_payload():
     payload = {
+        "schema_version": "1.1",
         "job_title": "AI Engineer",
         "fit_score": 80,
         "role_family": "ai_engineer",
