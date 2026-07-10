@@ -437,11 +437,12 @@ object with:
 - `role_family`
 - `active_resume`
 - `cv_rankings`
-- `jd_requirements`
+- `jd_requirements` including `role_profile` with primary and secondary/context roles
 - `company_context_review`
 - `evidence_depth`
 - `scoring_breakdown`
 - `score_explanations`
+- `score_rationale_summary`
 - `weak_evidence`
 - `cv_jd_review`
 - `cv_match`

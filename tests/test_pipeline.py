@@ -39,9 +39,10 @@ def test_generate_brief_has_required_fields(tmp_path):
     job.write_text("# AI Engineer\nPython retrieval evaluation BM25", encoding="utf-8")
     brief = generate_brief(job, store, embedder, memory)
     assert brief["job_title"] == "AI Engineer"
-    assert brief["schema_version"] == "1.3"
+    assert brief["schema_version"] == "1.4"
     assert brief["matched_evidence"]
     assert brief["score_explanations"]
+    assert brief["score_rationale_summary"]["primary_role"] == "ai_engineer"
     assert brief["company_context_review"]["status"] == "no_external_sources"
     assert brief["company_context_review"]["weight_recommendations"] == []
     assert "llm_agent_steps" in brief
@@ -217,6 +218,48 @@ def test_web_research_does_not_change_cv_jd_score(tmp_path, monkeypatch):
     assert with_research["fit_score"] == base["fit_score"]
     assert with_research["cv_jd_review"]["matched_terms"] == base["cv_jd_review"]["matched_terms"]
     assert with_research["company_context_review"]["score_policy"] == "advisory_only_no_score_change"
+
+
+def test_full_stack_micron_review_explains_low_score_cap(tmp_path, monkeypatch):
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    embedder = HashingEmbedder()
+    store = JsonVectorStore(tmp_path / "vectors.json")
+    memory = MemoryStore(tmp_path / "memory.json")
+    resume = tmp_path / "resume" / "cv.md"
+    resume.parent.mkdir()
+    resume.write_text(
+        "Built data platforms with Docker, Kubernetes, SQL, Python, RAG, APIs, and dashboards.",
+        encoding="utf-8",
+    )
+    store.upsert_chunks(chunk_document(resume, resume.read_text(encoding="utf-8"), root=tmp_path), embedder)
+
+    brief = generate_brief(
+        None,
+        store,
+        embedder,
+        memory,
+        job_text="""
+        AI-Enabled Full Stack Developer - NCG
+        Department: Smart MFG/AI
+        Required Qualifications:
+        Develop restful web services using NodeJS, Apache or C#.
+        Object Oriented Programming preferably .NET.
+        SQL and NoSQL databases.
+        Angular, TypeScript, JavaScript, and other Web technologies.
+        Git.
+        Docker, Kubernetes, OpenShift, or other container technologies.
+        GitHub Copilot or other Code Generation Utilities.
+        """,
+        job_title="AI-Enabled Full Stack Developer - NCG",
+    )
+
+    assert brief["role_family"] == "software_engineer"
+    assert brief["jd_requirements"]["role_profile"]["primary"] == "software_engineer"
+    assert "manufacturing_it" in brief["jd_requirements"]["role_profile"]["secondary"]
+    assert brief["score_rationale_summary"]["primary_role"] == "software_engineer"
+    assert brief["score_rationale_summary"]["score_cap"] <= 45
+    assert brief["score_rationale_summary"]["missing_core_stack"]
+    assert "capped" in brief["score_rationale_summary"]["summary"].casefold()
 
 
 def test_company_context_recommends_external_requirement_weighting(tmp_path, monkeypatch):

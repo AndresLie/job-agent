@@ -292,16 +292,28 @@
             {% set cv_rankings = result.cv_rankings | default([]) %}
             {% set company_context = result.company_context_review | default({}) %}
             {% set improvement_review = result.cv_improvement_review | default({}) %}
+            {% set score_rationale = result.score_rationale_summary | default({}) %}
+            {% set role_profile = result.jd_requirements.role_profile | default({}) %}
             <header class="result-header">
               <div>
-                <p class="eyebrow">{{ result.role_family | default("general_ai_data") }}</p>
+                <p class="eyebrow">{{ score_rationale.primary_role | default(role_profile.primary | default(result.role_family | default("general_ai_data"))) }}</p>
                 <h2>{{ result.job_title }}</h2>
+                {% set secondary_roles = score_rationale.secondary_roles | default(role_profile.secondary | default([])) %}
+                {% if secondary_roles %}
+                  <p class="muted result-role-context">Context: {{ secondary_roles | join(", ") }}</p>
+                {% endif %}
               </div>
               <div class="score-block">
                 <span class="score">{{ result.fit_score }}</span>
                 <span class="score-label">Fit score</span>
               </div>
             </header>
+
+            {% if result.schema_version | default("unknown") != "1.4" %}
+              <div class="alert alert-warning">
+                This result was generated with schema {{ result.schema_version | default("unknown") }}. Rerun the review to use the current role parser and score rationale.
+              </div>
+            {% endif %}
 
             <nav class="result-tabs" aria-label="Review result sections" data-tabs>
               <button type="button" class="tab-button is-active" data-tab-target="overview">Overview</button>
@@ -347,6 +359,52 @@
                 </div>
               </div>
             </section>
+
+            {% if score_rationale.summary %}
+              <section class="section-block rationale-section">
+                <p class="eyebrow">Score Rationale</p>
+                <h3>Why This Score</h3>
+                <p>{{ score_rationale.summary }}</p>
+                <div class="rationale-grid">
+                  <div>
+                    <strong>Credited Strengths</strong>
+                    {% if score_rationale.matched_strengths %}
+                      <ul class="tag-list">
+                        {% for item in score_rationale.matched_strengths %}
+                          <li>{{ item }}</li>
+                        {% endfor %}
+                      </ul>
+                    {% else %}
+                      <p class="muted">No direct strengths were credited from the active CV.</p>
+                    {% endif %}
+                  </div>
+                  <div>
+                    <strong>Missing Core Stack</strong>
+                    {% if score_rationale.missing_core_stack %}
+                      <ul class="tag-list">
+                        {% for item in score_rationale.missing_core_stack %}
+                          <li>{{ item }}</li>
+                        {% endfor %}
+                      </ul>
+                    {% else %}
+                      <p class="muted">No core stack cap was triggered.</p>
+                    {% endif %}
+                  </div>
+                </div>
+                <div class="raise-score-list">
+                  <strong>What would raise the score</strong>
+                  {% if score_rationale.what_would_raise_score %}
+                    <ul class="compact-list">
+                      {% for item in score_rationale.what_would_raise_score %}
+                        <li><span>{{ item }}</span></li>
+                      {% endfor %}
+                    </ul>
+                  {% else %}
+                    <p class="muted">No specific score-lifting action was generated.</p>
+                  {% endif %}
+                </div>
+              </section>
+            {% endif %}
 
             {% if cv_rankings and cv_rankings | length > 1 %}
               <section class="section-block">

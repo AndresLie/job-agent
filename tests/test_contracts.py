@@ -3,7 +3,7 @@ from career_copilot.contracts import validate_brief
 
 def test_validate_brief_accepts_valid_payload():
     payload = {
-        "schema_version": "1.3",
+        "schema_version": "1.4",
         "job_title": "AI Engineer",
         "fit_score": 80,
         "role_family": "ai_engineer",
@@ -25,6 +25,20 @@ def test_validate_brief_accepts_valid_payload():
             "preferred_coverage": 0,
         },
         "score_explanations": [],
+        "score_rationale_summary": {
+            "primary_role": "ai_engineer",
+            "secondary_roles": [],
+            "active_resume": "",
+            "summary": "Primary scoring role: ai engineer.",
+            "matched_strengths": ["python"],
+            "missing_core_stack": [],
+            "weak_evidence": [],
+            "hidden_cv_opportunities": [],
+            "skill_gaps": [],
+            "score_cap": None,
+            "cap_reason": "",
+            "what_would_raise_score": [],
+        },
         "weak_evidence": [],
         "cv_jd_review": {
             "score": 80,

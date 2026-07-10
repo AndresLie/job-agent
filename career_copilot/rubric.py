@@ -307,7 +307,8 @@ MIN_REQUIRED_WEIGHT = 0.5
 def analyze_job_requirements(job_text: str) -> dict:
     sections = split_job_sections(job_text)
     text = normalize(job_text)
-    role_family = detect_role_family(text)
+    role_profile = detect_role_profile(text)
+    role_family = role_profile["primary"]
     term_details = build_term_details(sections, role_family)
     preferred = sorted(term for term, detail in term_details.items() if detail["strength"] == "preferred")
     context = sorted(term for term, detail in term_details.items() if detail["strength"] == "context")
@@ -321,6 +322,7 @@ def analyze_job_requirements(job_text: str) -> dict:
     requirement_groups = build_requirement_groups(sections, term_details)
     return {
         "role_family": role_family,
+        "role_profile": role_profile,
         "required": required,
         "preferred": preferred,
         "context": context,
@@ -423,6 +425,53 @@ def known_skill_terms() -> set[str]:
 
 
 def detect_role_family(text: str) -> str:
+    return detect_role_profile(text)["primary"]
+
+
+def detect_role_profile(text: str) -> dict:
+    normalized_text = normalize(text)
+    scores = score_role_families(normalized_text)
+    primary, best_score = max(scores.items(), key=lambda item: item[1])
+    primary = primary if best_score else "general_ai_data"
+    secondary = [
+        role
+        for role, score in sorted(scores.items(), key=lambda item: item[1], reverse=True)
+        if role != primary and score >= 2.0
+    ][:2]
+    if role_has_strong_software_signal(normalized_text):
+        primary = "software_engineer"
+        secondary = [role for role in secondary if role != primary]
+        if scores.get("manufacturing_it", 0) >= 2.0 and "manufacturing_it" not in secondary:
+            secondary.insert(0, "manufacturing_it")
+        if scores.get("ai_engineer", 0) >= 2.0 and "ai_engineer" not in secondary:
+            secondary.append("ai_engineer")
+    if (
+        primary == "software_engineer"
+        and role_has_manufacturing_system_signal(normalized_text)
+        and not role_has_full_stack_product_signal(normalized_text)
+    ):
+        primary = "manufacturing_it"
+        secondary = ["software_engineer"] + [
+            role for role in secondary if role not in {"software_engineer", "manufacturing_it"}
+        ]
+    if primary == "manufacturing_it" and scores.get("software_engineer", 0) >= scores.get("manufacturing_it", 0) - 1.0:
+        if role_has_full_stack_stack_signal(normalized_text):
+            primary = "software_engineer"
+            secondary = ["manufacturing_it"] + [role for role in secondary if role not in {"software_engineer", "manufacturing_it"}]
+    if primary != "manufacturing_it" and scores.get("manufacturing_it", 0) >= 2.0 and "manufacturing_it" not in secondary:
+        secondary.append("manufacturing_it")
+    if primary == "general_ai_data":
+        secondary = []
+    secondary = dedupe_preserve_order([role for role in secondary if role != primary])[:2]
+    return {
+        "primary": primary,
+        "secondary": secondary,
+        "scores": {role: round(score, 2) for role, score in scores.items() if score > 0},
+        "reason": build_role_profile_reason(primary, secondary),
+    }
+
+
+def score_role_families(text: str) -> dict[str, float]:
     lead_text = text[:350]
     scores = {role: 0.0 for role in ROLE_HINTS}
     for role, hints in ROLE_HINTS.items():
@@ -443,8 +492,76 @@ def detect_role_family(text: str) -> str:
     if phrase_in_text("generative ai tools", text) or phrase_in_text("code generation utilities", text):
         scores["software_engineer"] += 1.0
         scores["ai_engineer"] += 0.25
-    best_role, best_score = max(scores.items(), key=lambda item: item[1])
-    return best_role if best_score else "general_ai_data"
+    if role_has_full_stack_stack_signal(text):
+        scores["software_engineer"] += 3.0
+    return scores
+
+
+def role_has_strong_software_signal(text: str) -> bool:
+    lead_text = text[:500]
+    return (
+        phrase_in_text("software development engineer", lead_text)
+        or phrase_in_text("software engineer", lead_text)
+        or phrase_in_text("full-stack", text)
+        or phrase_in_text("full stack", text)
+        or role_has_full_stack_stack_signal(text)
+    )
+
+
+def role_has_manufacturing_system_signal(text: str) -> bool:
+    return (
+        phrase_in_text("mes", text)
+        or phrase_in_text("manufacturing execution", text)
+        or phrase_in_text("semiconductor manufacturing", text)
+        or phrase_in_text("production support", text)
+    )
+
+
+def role_has_full_stack_product_signal(text: str) -> bool:
+    return (
+        phrase_in_text("full-stack", text)
+        or phrase_in_text("full stack", text)
+        or phrase_in_text("web technologies", text)
+        or role_has_full_stack_stack_signal(text)
+    )
+
+
+def role_has_full_stack_stack_signal(text: str) -> bool:
+    stack_terms = {
+        "nodejs",
+        "apache",
+        "csharp",
+        "dotnet",
+        "angular",
+        "typescript",
+        "javascript",
+        "api",
+        "sql",
+        "nosql",
+        "git",
+        "oop",
+    }
+    return len(extract_skills(text) & stack_terms) >= 4
+
+
+def build_role_profile_reason(primary: str, secondary: list[str]) -> str:
+    if not secondary:
+        return f"Scoring uses {primary} as the primary role family."
+    return (
+        f"Scoring uses {primary} as the primary role family; "
+        f"{', '.join(secondary)} is treated as contextual signal, not the main score target."
+    )
+
+
+def dedupe_preserve_order(values: Iterable[str]) -> list[str]:
+    seen = set()
+    result = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
 
 
 def split_job_sections(job_text: str) -> list[dict]:

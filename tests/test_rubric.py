@@ -138,6 +138,8 @@ def test_full_stack_software_jd_is_not_ai_engineer_from_department_label():
     )
 
     assert requirements["role_family"] == "software_engineer"
+    assert requirements["role_profile"]["primary"] == "software_engineer"
+    assert "manufacturing_it" in requirements["role_profile"]["secondary"]
     assert {
         "nodejs",
         "apache",
@@ -154,6 +156,25 @@ def test_full_stack_software_jd_is_not_ai_engineer_from_department_label():
     } <= set(requirements["required"])
     assert any({"nodejs", "apache", "csharp"} <= set(group["terms"]) for group in requirements["requirement_groups"])
     assert any({"docker", "kubernetes", "openshift"} <= set(group["terms"]) for group in requirements["requirement_groups"])
+
+
+def test_micron_full_stack_stack_beats_manufacturing_context():
+    requirements = analyze_job_requirements(
+        """
+        AI-Enabled Full Stack Developer - NCG
+        Department: Smart MFG/AI
+        This team builds manufacturing analytics and automation software for semiconductor operations.
+
+        Required Qualifications:
+        Develop full-stack web applications with C#, ASP.NET, Angular, TypeScript, JavaScript, APIs, SQL and NoSQL.
+        Use Git, Docker, Kubernetes, OpenShift, object-oriented programming, and code generation tools.
+        """
+    )
+
+    assert requirements["role_family"] == "software_engineer"
+    assert requirements["role_profile"]["primary"] == "software_engineer"
+    assert "manufacturing_it" in requirements["role_profile"]["secondary"]
+    assert {"csharp", "dotnet", "angular", "typescript", "javascript", "docker"} <= set(requirements["required"])
 
 
 def test_core_stack_gap_caps_infrastructure_only_cv():

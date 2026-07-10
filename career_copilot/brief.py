@@ -108,6 +108,15 @@ def generate_brief(
         matched=matched,
         weak_evidence=weak_evidence,
     )
+    score_rationale_summary = build_score_rationale_summary(
+        requirements=requirements,
+        scoring_breakdown=rubric_result["scoring_breakdown"],
+        matched=matched,
+        gaps=gaps,
+        weak_evidence=weak_evidence,
+        hidden_terms=hidden_terms,
+        active_resume=active_resume,
+    )
     brutal_assessment = build_brutal_assessment(fit_score, matched, hidden_terms, gaps, resume_hits, supporting_hits)
     hermes_review = generate_brutal_llm_review(
         job_title=resolved_job_title,
@@ -159,11 +168,14 @@ def generate_brief(
             "active_resume": active_resume.get("source_path", ""),
             "supporting_chunks_considered": len(supporting_hits),
             "credible_cv_terms": rubric_result.get("credible_matched_terms", []),
+            "primary_role": score_rationale_summary["primary_role"],
+            "secondary_roles": score_rationale_summary["secondary_roles"],
+            "score_cap_applied": rubric_result["scoring_breakdown"].get("score_cap"),
         }
     )
     all_citation_hits = resume_hits + supporting_hits
     payload = {
-        "schema_version": "1.3",
+        "schema_version": "1.4",
         "job_title": resolved_job_title,
         "job_input": {
             "source_type": job_source_type,
@@ -180,6 +192,7 @@ def generate_brief(
         "evidence_depth": evidence_depth,
         "scoring_breakdown": rubric_result["scoring_breakdown"],
         "score_explanations": score_explanations,
+        "score_rationale_summary": score_rationale_summary,
         "weak_evidence": weak_evidence,
         "cv_jd_review": {
             "score": fit_score,
@@ -251,6 +264,16 @@ def apply_requirements_override(requirements: dict, override: dict | None) -> di
     return {
         **requirements,
         "role_family": role_family,
+        "role_profile": {
+            "primary": role_family,
+            "secondary": [
+                role
+                for role in requirements.get("role_profile", {}).get("secondary", [])
+                if role != role_family
+            ],
+            "scores": requirements.get("role_profile", {}).get("scores", {}),
+            "reason": f"Scoring uses {role_family} because it was manually selected in requirement calibration.",
+        },
         "required": required,
         "preferred": preferred,
         "context": context,
@@ -808,6 +831,78 @@ def build_score_explanations(
             }
         )
     return explanations
+
+
+def build_score_rationale_summary(
+    *,
+    requirements: dict,
+    scoring_breakdown: dict,
+    matched: list[str],
+    gaps: list[str],
+    weak_evidence: list[str],
+    hidden_terms: list[str],
+    active_resume: dict,
+) -> dict:
+    role_profile = requirements.get("role_profile") or {}
+    primary_role = role_profile.get("primary") or requirements.get("role_family", "general_ai_data")
+    secondary_roles = list(role_profile.get("secondary") or [])
+    cap = scoring_breakdown.get("score_cap")
+    missing_core = list(scoring_breakdown.get("missing_core_stack_groups") or [])
+    matched_strengths = matched[:8]
+    score_parts = [
+        f"Primary scoring role: {primary_role.replace('_', ' ')}.",
+    ]
+    if secondary_roles:
+        score_parts.append(
+            "Context roles were detected but do not drive the main score: "
+            + ", ".join(role.replace("_", " ") for role in secondary_roles)
+            + "."
+        )
+    if matched_strengths:
+        score_parts.append("The CV gets credit for " + ", ".join(matched_strengths[:5]) + ".")
+    else:
+        score_parts.append("The current CV has little direct evidence for the JD's required terms.")
+    if cap:
+        score_parts.append(scoring_breakdown.get("score_cap_reason") or "A score cap was applied due to missing core requirements.")
+    elif gaps or weak_evidence:
+        score_parts.append("The score is limited by missing or shallow evidence in the current CV.")
+    else:
+        score_parts.append("No hard score cap was applied by the deterministic rubric.")
+
+    raise_score_actions = []
+    if missing_core:
+        raise_score_actions.append(
+            "Add credible CV evidence for the missing core stack groups: "
+            + "; ".join(missing_core[:4])
+            + "."
+        )
+    if weak_evidence:
+        raise_score_actions.append(
+            "Rewrite shallow CV mentions into concrete work, internship, production, or measured-impact bullets for: "
+            + ", ".join(weak_evidence[:5])
+            + "."
+        )
+    if hidden_terms:
+        raise_score_actions.append("Promote relevant project or experience evidence into the CV for: " + ", ".join(hidden_terms[:5]) + ".")
+    if gaps:
+        raise_score_actions.append("Build or document real evidence for true gaps: " + ", ".join(gaps[:5]) + ".")
+    if not raise_score_actions:
+        raise_score_actions.append("Add more quantified impact and stronger responsibility-level evidence to raise the score.")
+
+    return {
+        "primary_role": primary_role,
+        "secondary_roles": secondary_roles,
+        "active_resume": active_resume.get("source_path", ""),
+        "summary": " ".join(score_parts),
+        "matched_strengths": matched_strengths,
+        "missing_core_stack": missing_core,
+        "weak_evidence": weak_evidence[:8],
+        "hidden_cv_opportunities": hidden_terms[:8],
+        "skill_gaps": gaps[:8],
+        "score_cap": cap,
+        "cap_reason": scoring_breakdown.get("score_cap_reason", ""),
+        "what_would_raise_score": raise_score_actions[:4],
+    }
 
 
 def quantified_impact_evidence(hits: list[dict]) -> list[str]:
